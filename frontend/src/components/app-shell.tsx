@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 
 const navigation = [
   { href: "/", label: "Dashboard", symbol: "▦" },
+  { href: "/presentation", label: "Presentation", symbol: "▶" },
   { href: "/analyse", label: "Analyse", symbol: "◎" },
   { href: "/parking-lots", label: "Parking lots", symbol: "P" },
   { href: "/history", label: "History", symbol: "↺" },

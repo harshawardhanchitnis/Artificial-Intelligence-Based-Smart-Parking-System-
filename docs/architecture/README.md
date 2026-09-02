@@ -1,5 +1,11 @@
 # Foundation architecture
 
+## Milestone 5 presentation flow
+
+`Preflight → deterministic showcase catalogue → three existing analysis requests → SQLite history → guided overlays → Analytics/Reports`
+
+Presentation mode does not introduce a second inference path. It selects one stable scenario per approved dataset and calls the same analysis endpoint used by the normal workspace, preserving consistent AI behavior and audit history.
+
 ## Milestone 4 data flow
 
 `Prepared scenario → local inference → AnalysisRecord → dashboard/analytics/report APIs → Next.js views`

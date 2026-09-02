@@ -30,6 +30,8 @@ try {
     Assert-CommandSucceeded 'prepared demo verification'
     & $backendPython -m app.cli.verify_occupancy_model
     Assert-CommandSucceeded 'local occupancy model verification'
+    & $backendPython -m app.cli.verify_demo
+    Assert-CommandSucceeded 'offline presentation preflight'
 }
 finally {
     Pop-Location
@@ -49,4 +51,4 @@ finally {
     Pop-Location
 }
 
-Write-Host 'All Milestone 4 checks passed.' -ForegroundColor Green
+Write-Host 'All Milestone 5 checks passed.' -ForegroundColor Green

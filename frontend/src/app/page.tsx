@@ -26,10 +26,10 @@ export default function DashboardPage() {
           </p>
         </div>
         <Link
-          href="/analyse"
+          href="/presentation"
           className="rounded-xl bg-amber-500 px-5 py-3 text-center text-sm font-extrabold text-slate-950 shadow-lg shadow-amber-500/20 transition hover:bg-amber-400"
         >
-          Open analysis workspace →
+          Start guided presentation →
         </Link>
       </div>
 

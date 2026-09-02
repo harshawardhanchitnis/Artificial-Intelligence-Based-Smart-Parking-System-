@@ -2,7 +2,7 @@
 
 An offline, dataset-driven smart-parking application. The product analyses preloaded parking-lot images and presents occupied and vacant spaces without cameras, sensors, live feeds, or cloud AI APIs.
 
-## Milestone 4 status
+## Milestone 5 status
 
 The application now includes:
 
@@ -22,6 +22,9 @@ The application now includes:
 - Safe additive migration for existing analysis-history databases
 - Live dashboard and operational analytics from saved local inference runs
 - On-demand full-history CSV and per-analysis CSV/JSON reports
+- Five-point offline presentation readiness preflight
+- Deterministic three-dataset showcase with sequential local inference
+- Full-screen guided results with overlays, quality metrics, and report links
 
 The application now distinguishes verified dataset ground truth from actual local AI predictions, persists model-quality fields, and turns saved runs into presentation analytics and reports. The lightweight model runs on CPU, requires no pretrained download, and remains fully offline. Full dataset extraction is still optional and is not required for the demo.
 
