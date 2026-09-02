@@ -10,6 +10,8 @@ type AnalysisRecord = {
   occupied_spaces: number;
   vacant_spaces: number;
   processing_time_ms: number;
+  average_confidence: number | null;
+  ground_truth_agreement: number | null;
   created_at: string;
 };
 type HistoryResponse = { count: number; analyses: AnalysisRecord[] };
@@ -33,13 +35,14 @@ export function AnalysisHistory() {
     <div className="card mt-8 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400"><tr><th className="p-4">Run</th><th className="p-4">Dataset / scenario</th><th className="p-4">Result</th><th className="p-4">Time</th><th className="p-4">Completed</th></tr></thead>
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400"><tr><th className="p-4">Run</th><th className="p-4">Dataset / scenario</th><th className="p-4">Result</th><th className="p-4">AI quality</th><th className="p-4">Time</th><th className="p-4">Completed</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {records.map((record) => (
               <tr key={record.id}>
                 <td className="p-4 font-black">#{record.id}</td>
                 <td className="p-4"><p className="font-bold">{record.dataset}</p><p className="mt-1 max-w-xs truncate text-xs text-slate-400">{record.scenario_id}</p></td>
                 <td className="p-4"><span className="font-bold text-emerald-600">{record.vacant_spaces} vacant</span><span className="mx-2 text-slate-300">/</span><span className="font-bold text-red-600">{record.occupied_spaces} occupied</span></td>
+                <td className="p-4 text-xs"><p className="font-bold">{record.average_confidence === null ? "Legacy run" : `${(record.average_confidence * 100).toFixed(1)}% confidence`}</p><p className="mt-1 text-slate-400">{record.ground_truth_agreement === null ? "No saved metric" : `${(record.ground_truth_agreement * 100).toFixed(1)}% agreement`}</p></td>
                 <td className="p-4 font-semibold">{record.processing_time_ms.toFixed(1)} ms</td>
                 <td className="p-4 text-slate-500">{new Date(record.created_at).toLocaleString()}</td>
               </tr>

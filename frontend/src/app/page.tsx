@@ -1,11 +1,5 @@
 import Link from "next/link";
-
-const metrics = [
-  { label: "Datasets configured", value: "3", note: "PKLot · CNRPark+EXT · ACPDS" },
-  { label: "Required archives", value: "7", note: "Ready for validation" },
-  { label: "Operating mode", value: "Offline", note: "No live feeds or hardware" },
-  { label: "AI runtime", value: "Local", note: "RTX 4070 available" },
-];
+import { DashboardSummary } from "@/components/dashboard-summary";
 
 const datasets = [
   { name: "PKLot", detail: "Full-lot views, XML slot annotations", color: "bg-amber-500" },
@@ -39,17 +33,7 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => (
-          <article className="card p-5" key={metric.label}>
-            <p className="label">{metric.label}</p>
-            <p className="mt-3 text-3xl font-black tracking-tight text-slate-900">
-              {metric.value}
-            </p>
-            <p className="mt-2 text-xs text-slate-500">{metric.note}</p>
-          </article>
-        ))}
-      </section>
+      <DashboardSummary />
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[1.4fr_1fr]">
         <article className="card p-6">

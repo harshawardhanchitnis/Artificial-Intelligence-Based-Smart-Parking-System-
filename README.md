@@ -2,7 +2,7 @@
 
 An offline, dataset-driven smart-parking application. The product analyses preloaded parking-lot images and presents occupied and vacant spaces without cameras, sensors, live feeds, or cloud AI APIs.
 
-## Milestone 3 status
+## Milestone 4 status
 
 The application now includes:
 
@@ -19,8 +19,11 @@ The application now includes:
 - Local occupancy model training with scenario-group validation
 - Checksum-verified, non-pickle numeric model persistence
 - Per-slot AI predictions, confidence, comparison overlays, and SQLite history
+- Safe additive migration for existing analysis-history databases
+- Live dashboard and operational analytics from saved local inference runs
+- On-demand full-history CSV and per-analysis CSV/JSON reports
 
-The application now distinguishes verified dataset ground truth from actual local AI predictions. The lightweight model runs on CPU, requires no pretrained download, and remains fully offline. Full dataset extraction is still optional and is not required for the demo.
+The application now distinguishes verified dataset ground truth from actual local AI predictions, persists model-quality fields, and turns saved runs into presentation analytics and reports. The lightweight model runs on CPU, requires no pretrained download, and remains fully offline. Full dataset extraction is still optional and is not required for the demo.
 
 ## Prerequisites
 
@@ -40,6 +43,8 @@ powershell -ExecutionPolicy Bypass -File '.\scripts\setup.ps1'
 ```
 
 The setup script creates `backend\.venv`, installs the backend and frontend dependencies, initializes SQLite, validates the dataset archive catalogue, and runs smoke tests.
+
+Existing Milestone 3 databases are upgraded safely during setup. The migration can also be run directly with `scripts\migrate-database.ps1`.
 
 Prepare the lightweight offline catalogue:
 

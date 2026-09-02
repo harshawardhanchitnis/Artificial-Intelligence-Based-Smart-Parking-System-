@@ -1,5 +1,11 @@
 # Foundation architecture
 
+## Milestone 4 data flow
+
+`Prepared scenario → local inference → AnalysisRecord → dashboard/analytics/report APIs → Next.js views`
+
+SQLite remains the only application database. The version 4 migration adds nullable model-quality and prediction fields to the existing analysis table, allowing older rows to remain visible as legacy runs. CSV and JSON exports are streamed directly from API responses and do not create runtime files in Git.
+
 The product is a local two-process application:
 
 1. The Next.js frontend presents the dashboard, catalogue, analysis workspace, history, analytics, reports, and system readiness pages.

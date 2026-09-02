@@ -30,6 +30,8 @@ try {
     Assert-CommandSucceeded 'pip upgrade'
     & $backendPython -m pip install -e '.[dev]'
     Assert-CommandSucceeded 'backend dependency installation'
+    & $backendPython -m app.cli.migrate_database
+    Assert-CommandSucceeded 'database migration'
     & $backendPython -m pytest
     Assert-CommandSucceeded 'backend tests'
     & $backendPython -m app.cli.validate_archives
@@ -59,5 +61,5 @@ finally {
 }
 
 Write-Host ''
-Write-Host 'Foundation setup completed successfully.' -ForegroundColor Green
+Write-Host 'Milestone 4 setup completed successfully.' -ForegroundColor Green
 Write-Host 'Use scripts\start-backend.ps1 and scripts\start-frontend.ps1 in two terminals.'

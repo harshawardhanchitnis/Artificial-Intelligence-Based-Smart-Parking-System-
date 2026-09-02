@@ -18,6 +18,8 @@ if (-not (Test-Path -LiteralPath $backendPython)) {
 Write-Host 'Checking backend...' -ForegroundColor Cyan
 Push-Location $backendRoot
 try {
+    & $backendPython -m app.cli.migrate_database
+    Assert-CommandSucceeded 'database migration'
     & $backendPython -m ruff check app tests
     Assert-CommandSucceeded 'backend lint'
     & $backendPython -m pytest
@@ -47,4 +49,4 @@ finally {
     Pop-Location
 }
 
-Write-Host 'All Milestone 3 checks passed.' -ForegroundColor Green
+Write-Host 'All Milestone 4 checks passed.' -ForegroundColor Green

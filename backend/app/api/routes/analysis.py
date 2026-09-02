@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
@@ -8,6 +10,7 @@ from app.db.models import AnalysisRecord
 from app.db.session import SessionLocal
 from app.ml.inference import analyse_scenario
 from app.ml.model_store import ModelNotReadyError, model_status
+from app.services.analytics_service import record_payload
 from app.services.catalogue_service import ScenarioNotFoundError
 
 router = APIRouter()
@@ -39,6 +42,10 @@ def run_analysis(scenario_id: str) -> dict[str, object]:
         vacant_spaces=int(result["vacant_spaces"]),
         processing_time_ms=float(result["processing_time_ms"]),
         result_image_path=None,
+        model_name=str(result["model_name"]),
+        average_confidence=float(result["average_confidence"]),
+        ground_truth_agreement=float(result["ground_truth_agreement"]),
+        prediction_json=json.dumps(result["predictions"], separators=(",", ":")),
     )
     with SessionLocal() as session:
         session.add(record)
@@ -53,17 +60,5 @@ def history(limit: int = Query(default=25, ge=1, le=200)) -> dict[str, object]:
         records = session.scalars(
             select(AnalysisRecord).order_by(AnalysisRecord.created_at.desc()).limit(limit)
         ).all()
-    rows = [
-        {
-            "id": record.id,
-            "dataset": record.dataset,
-            "scenario_id": record.scenario_id,
-            "total_spaces": record.total_spaces,
-            "occupied_spaces": record.occupied_spaces,
-            "vacant_spaces": record.vacant_spaces,
-            "processing_time_ms": record.processing_time_ms,
-            "created_at": record.created_at,
-        }
-        for record in records
-    ]
+    rows = [record_payload(record) for record in records]
     return {"count": len(rows), "analyses": rows}
