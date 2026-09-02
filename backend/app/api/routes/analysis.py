@@ -1,0 +1,69 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import select
+
+from app.core.config import get_settings
+from app.db.models import AnalysisRecord
+from app.db.session import SessionLocal
+from app.ml.inference import analyse_scenario
+from app.ml.model_store import ModelNotReadyError, model_status
+from app.services.catalogue_service import ScenarioNotFoundError
+
+router = APIRouter()
+
+
+@router.get("/model/status")
+def status() -> dict[str, object]:
+    settings = get_settings()
+    return model_status(settings.model_root)
+
+
+@router.post("/analysis/scenarios/{scenario_id}")
+def run_analysis(scenario_id: str) -> dict[str, object]:
+    settings = get_settings()
+    try:
+        result = analyse_scenario(settings.parking_data_root, settings.model_root, scenario_id)
+    except ScenarioNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Scenario not found") from exc
+    except ModelNotReadyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    record = AnalysisRecord(
+        dataset=str(result["dataset"]),
+        scenario_id=scenario_id,
+        total_spaces=int(result["total_spaces"]),
+        occupied_spaces=int(result["occupied_spaces"]),
+        vacant_spaces=int(result["vacant_spaces"]),
+        processing_time_ms=float(result["processing_time_ms"]),
+        result_image_path=None,
+    )
+    with SessionLocal() as session:
+        session.add(record)
+        session.commit()
+        session.refresh(record)
+    return {**result, "analysis_id": record.id, "created_at": record.created_at}
+
+
+@router.get("/analysis/history")
+def history(limit: int = Query(default=25, ge=1, le=200)) -> dict[str, object]:
+    with SessionLocal() as session:
+        records = session.scalars(
+            select(AnalysisRecord).order_by(AnalysisRecord.created_at.desc()).limit(limit)
+        ).all()
+    rows = [
+        {
+            "id": record.id,
+            "dataset": record.dataset,
+            "scenario_id": record.scenario_id,
+            "total_spaces": record.total_spaces,
+            "occupied_spaces": record.occupied_spaces,
+            "vacant_spaces": record.vacant_spaces,
+            "processing_time_ms": record.processing_time_ms,
+            "created_at": record.created_at,
+        }
+        for record in records
+    ]
+    return {"count": len(rows), "analyses": rows}

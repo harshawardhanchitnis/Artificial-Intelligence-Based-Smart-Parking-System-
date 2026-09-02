@@ -1,18 +1,12 @@
-import { SectionPlaceholder } from "@/components/section-placeholder";
+import { AnalysisHistory } from "@/components/analysis-history";
 
 export default function HistoryPage() {
   return (
-    <SectionPlaceholder
-      eyebrow="Audit trail"
-      title="Analysis history"
-      description="Every completed scenario analysis will be saved locally for repeatable demonstrations."
-    >
-      <div className="rounded-2xl border border-dashed border-slate-300 py-16 text-center">
-        <p className="font-bold text-slate-700">No analyses recorded yet</p>
-        <p className="mt-2 text-sm text-slate-500">
-          Results will appear here after the inference milestone.
-        </p>
-      </div>
-    </SectionPlaceholder>
+    <div className="mx-auto max-w-7xl">
+      <p className="label">Audit trail</p>
+      <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Analysis history</h1>
+      <p className="mt-2 text-sm text-slate-500">Review local AI occupancy analyses stored in SQLite.</p>
+      <AnalysisHistory />
+    </div>
   );
 }

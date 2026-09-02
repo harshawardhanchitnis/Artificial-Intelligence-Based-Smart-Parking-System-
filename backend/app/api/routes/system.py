@@ -4,6 +4,7 @@ import sys
 from fastapi import APIRouter
 
 from app.core.config import get_settings
+from app.ml.model_store import model_status
 
 router = APIRouter()
 
@@ -21,4 +22,6 @@ def system_information() -> dict[str, object]:
         "dataset_root_exists": settings.parking_data_root.exists(),
         "live_data_enabled": False,
         "cloud_ai_enabled": False,
+        "local_ai_enabled": True,
+        "model": model_status(settings.model_root),
     }

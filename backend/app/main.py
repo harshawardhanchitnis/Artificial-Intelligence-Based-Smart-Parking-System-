@@ -17,7 +17,7 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
+    version="0.3.0",
     description="Offline dataset-driven smart-parking API",
     lifespan=lifespan,
 )

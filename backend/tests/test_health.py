@@ -21,3 +21,4 @@ def test_system_endpoint_confirms_offline_scope() -> None:
     payload = response.json()
     assert payload["live_data_enabled"] is False
     assert payload["cloud_ai_enabled"] is False
+    assert payload["local_ai_enabled"] is True

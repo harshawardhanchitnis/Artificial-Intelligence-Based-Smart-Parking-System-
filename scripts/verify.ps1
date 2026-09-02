@@ -26,6 +26,8 @@ try {
     Assert-CommandSucceeded 'dataset archive validation'
     & $backendPython -m app.cli.verify_prepared_data
     Assert-CommandSucceeded 'prepared demo verification'
+    & $backendPython -m app.cli.verify_occupancy_model
+    Assert-CommandSucceeded 'local occupancy model verification'
 }
 finally {
     Pop-Location
@@ -45,4 +47,4 @@ finally {
     Pop-Location
 }
 
-Write-Host 'All Milestone 2 checks passed.' -ForegroundColor Green
+Write-Host 'All Milestone 3 checks passed.' -ForegroundColor Green

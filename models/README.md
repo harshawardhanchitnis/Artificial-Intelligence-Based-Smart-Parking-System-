@@ -1,3 +1,3 @@
 # Model artifacts
 
-Model metadata may be version controlled. Large weights belong in models/weights, are ignored by Git, and should be distributed separately through a release artifact when licensing permits.
+This repository keeps no trained weights. Milestone 3 writes the numeric model and checksum-bearing metadata to `PARKING_DATA_ROOT\models`, outside Git.

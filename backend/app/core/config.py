@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     def archives_root(self) -> Path:
         return self.parking_data_root / "archives"
 
+    @property
+    def model_root(self) -> Path:
+        return self.parking_data_root / "models"
+
 
 @lru_cache
 def get_settings() -> Settings:

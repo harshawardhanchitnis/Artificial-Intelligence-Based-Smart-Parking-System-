@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.db.session import engine
+from app.ml.model_store import model_status
 
 router = APIRouter()
 
@@ -27,4 +28,5 @@ def health() -> dict[str, object]:
         "database": database_status,
         "dataset_root_exists": settings.parking_data_root.exists(),
         "demo_catalogue_exists": (settings.parking_data_root / "demo" / "catalogue.json").is_file(),
+        "model_ready": bool(model_status(settings.model_root)["ready"]),
     }

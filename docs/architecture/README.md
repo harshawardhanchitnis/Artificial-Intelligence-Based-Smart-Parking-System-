@@ -8,23 +8,27 @@ The product is a local two-process application:
 4. Original datasets remain outside Git and are accessed through a configured read-only path.
 5. Model weights and generated media remain local.
 
-## Milestone 2 request flow
+## Milestone 3 request flow
 
 ```text
 User selects scenario
         ↓
-Frontend requests prepared scenario
+Frontend requests local AI analysis
         ↓
-FastAPI loads catalogue + normalized slot geometry
+FastAPI loads image, slot geometry, and verified local model
         ↓
-Dataset ground truth supplies each slot state
+Feature extractor builds HOG/color vectors for every slot crop
         ↓
-Frontend renders green/red polygons over the source image
+Local classifier predicts occupied probability and confidence
+        ↓
+SQLite records prediction totals and processing time
+        ↓
+Frontend renders prediction polygons and ground-truth comparison
         ↓
 Frontend presents results
 ```
 
-Milestone 3 inserts local model inference between image loading and result presentation. The catalogue contract remains stable so the UI can compare ground truth with predictions later.
+The catalogue remains unchanged. Numeric model weights and metadata live under the external data root, and a SHA-256 check is required before inference. No pickle, cloud model, camera, sensor, or live feed is involved.
 
 ## Boundaries
 

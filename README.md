@@ -2,7 +2,7 @@
 
 An offline, dataset-driven smart-parking application. The product analyses preloaded parking-lot images and presents occupied and vacant spaces without cameras, sensors, live feeds, or cloud AI APIs.
 
-## Milestone 2 status
+## Milestone 3 status
 
 The application now includes:
 
@@ -16,8 +16,11 @@ The application now includes:
 - A lightweight Demo profile with normalized slot polygons and occupancy labels
 - Prepared catalogue/scenario/image APIs
 - Interactive Analyse and Parking Lots pages backed by real prepared data
+- Local occupancy model training with scenario-group validation
+- Checksum-verified, non-pickle numeric model persistence
+- Per-slot AI predictions, confidence, comparison overlays, and SQLite history
 
-The local occupancy model is intentionally deferred to Milestone 3. Milestone 2 clearly presents dataset ground truth, not AI predictions. Full extraction is optional and is not required for the demo.
+The application now distinguishes verified dataset ground truth from actual local AI predictions. The lightweight model runs on CPU, requires no pretrained download, and remains fully offline. Full dataset extraction is still optional and is not required for the demo.
 
 ## Prerequisites
 
@@ -43,6 +46,7 @@ Prepare the lightweight offline catalogue:
 ```powershell
 powershell -ExecutionPolicy Bypass -File '.\scripts\prepare-datasets.ps1' -Profile Plan
 powershell -ExecutionPolicy Bypass -File '.\scripts\prepare-datasets.ps1' -Profile Demo -SamplesPerDataset 3
+powershell -ExecutionPolicy Bypass -File '.\scripts\train-model.ps1'
 ```
 
 ## Start the application

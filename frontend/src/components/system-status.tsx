@@ -7,6 +7,7 @@ type Health = {
   database: string;
   dataset_root_exists: boolean;
   demo_catalogue_exists: boolean;
+  model_ready: boolean;
 };
 
 const apiBase =
@@ -46,6 +47,11 @@ export function SystemStatus() {
       "Demo catalogue",
       health ? (health.demo_catalogue_exists ? "Prepared" : "Not prepared") : "Checking",
       health?.demo_catalogue_exists === true,
+    ],
+    [
+      "Local AI model",
+      health ? (health.model_ready ? "Ready" : "Not trained") : "Checking",
+      health?.model_ready === true,
     ],
   ];
 
