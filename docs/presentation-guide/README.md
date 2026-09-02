@@ -7,9 +7,9 @@ The final demonstration is designed to remain reliable without internet access.
 3. Open Analyse.
 4. Select PKLot, CNRPark+EXT, or ACPDS.
 5. Select a prepared lot, condition, and scenario.
-6. Run analysis.
-7. Explain green vacant spaces, red occupied spaces, totals, confidence, and processing time.
-8. Open History to show the saved record.
-9. Optionally export the annotated summary.
+6. Explain that the Milestone 2 view is a verified dataset ground-truth preview.
+7. Demonstrate that changing the selected scenario updates the image, polygons, and totals.
+8. Explain green vacant spaces and red occupied spaces.
+9. In Milestone 3, run local AI inference and compare predictions with these labels.
 
-A curated catalogue will be built before the presentation so no user upload or live feed is required.
+Prepare the curated catalogue before the presentation. No user upload, internet connection, live feed, camera, or hardware is required.

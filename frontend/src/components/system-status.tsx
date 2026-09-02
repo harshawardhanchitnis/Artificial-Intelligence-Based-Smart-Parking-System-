@@ -6,6 +6,7 @@ type Health = {
   status: string;
   database: string;
   dataset_root_exists: boolean;
+  demo_catalogue_exists: boolean;
 };
 
 const apiBase =
@@ -40,6 +41,11 @@ export function SystemStatus() {
       "External datasets",
       health ? (health.dataset_root_exists ? "Folder found" : "Folder missing") : "Checking",
       health?.dataset_root_exists === true,
+    ],
+    [
+      "Demo catalogue",
+      health ? (health.demo_catalogue_exists ? "Prepared" : "Not prepared") : "Checking",
+      health?.demo_catalogue_exists === true,
     ],
   ];
 

@@ -2,9 +2,9 @@
 
 An offline, dataset-driven smart-parking application. The product analyses preloaded parking-lot images and presents occupied and vacant spaces without cameras, sensors, live feeds, or cloud AI APIs.
 
-## Milestone 1 status
+## Milestone 2 status
 
-This foundation includes:
+The application now includes:
 
 - Next.js, React, TypeScript, and Tailwind CSS frontend shell
 - FastAPI backend with health, system, and dataset endpoints
@@ -12,8 +12,12 @@ This foundation includes:
 - PKLot, CNRPark+EXT, and ACPDS archive validation
 - Windows setup, start, and verification scripts
 - CI, VS Code settings, architecture notes, and presentation plan
+- Safe, streaming adapters for PKLot, CNRPark+EXT, and ACPDS
+- A lightweight Demo profile with normalized slot polygons and occupancy labels
+- Prepared catalogue/scenario/image APIs
+- Interactive Analyse and Parking Lots pages backed by real prepared data
 
-The occupancy model and full dataset extraction are intentionally deferred to later milestones.
+The local occupancy model is intentionally deferred to Milestone 3. Milestone 2 clearly presents dataset ground truth, not AI predictions. Full extraction is optional and is not required for the demo.
 
 ## Prerequisites
 
@@ -33,6 +37,13 @@ powershell -ExecutionPolicy Bypass -File '.\scripts\setup.ps1'
 ```
 
 The setup script creates `backend\.venv`, installs the backend and frontend dependencies, initializes SQLite, validates the dataset archive catalogue, and runs smoke tests.
+
+Prepare the lightweight offline catalogue:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File '.\scripts\prepare-datasets.ps1' -Profile Plan
+powershell -ExecutionPolicy Bypass -File '.\scripts\prepare-datasets.ps1' -Profile Demo -SamplesPerDataset 3
+```
 
 ## Start the application
 

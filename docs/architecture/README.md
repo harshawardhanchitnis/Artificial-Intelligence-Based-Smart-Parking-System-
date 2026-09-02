@@ -4,27 +4,27 @@ The product is a local two-process application:
 
 1. The Next.js frontend presents the dashboard, catalogue, analysis workspace, history, analytics, reports, and system readiness pages.
 2. The FastAPI backend owns dataset access, AI inference, occupancy decisions, generated overlays, persistence, and reports.
-3. SQLite stores prepared scenarios and analysis history.
+3. The external `demo/catalogue.json` stores prepared scenarios; SQLite stores application and analysis history records.
 4. Original datasets remain outside Git and are accessed through a configured read-only path.
 5. Model weights and generated media remain local.
 
-## Planned request flow
+## Milestone 2 request flow
 
 ```text
 User selects scenario
         ↓
-Frontend requests analysis
+Frontend requests prepared scenario
         ↓
-FastAPI loads image + slot geometry
+FastAPI loads catalogue + normalized slot geometry
         ↓
-Local classifier determines each slot state
+Dataset ground truth supplies each slot state
         ↓
-Backend renders green/red overlay
-        ↓
-SQLite stores summary and output path
+Frontend renders green/red polygons over the source image
         ↓
 Frontend presents results
 ```
+
+Milestone 3 inserts local model inference between image loading and result presentation. The catalogue contract remains stable so the UI can compare ground truth with predictions later.
 
 ## Boundaries
 

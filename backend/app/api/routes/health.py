@@ -26,4 +26,5 @@ def health() -> dict[str, object]:
         "environment": settings.app_env,
         "database": database_status,
         "dataset_root_exists": settings.parking_data_root.exists(),
+        "demo_catalogue_exists": (settings.parking_data_root / "demo" / "catalogue.json").is_file(),
     }
