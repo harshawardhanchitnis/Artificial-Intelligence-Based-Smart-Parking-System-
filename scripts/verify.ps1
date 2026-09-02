@@ -1,0 +1,46 @@
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$backendRoot = Join-Path $repoRoot 'backend'
+$frontendRoot = Join-Path $repoRoot 'frontend'
+$backendPython = Join-Path $backendRoot '.venv\Scripts\python.exe'
+
+function Assert-CommandSucceeded([string]$step) {
+    if ($LASTEXITCODE -ne 0) {
+        throw "$step failed with exit code $LASTEXITCODE."
+    }
+}
+
+if (-not (Test-Path -LiteralPath $backendPython)) {
+    throw 'Backend environment is missing. Run scripts\setup.ps1 first.'
+}
+
+Write-Host 'Checking backend...' -ForegroundColor Cyan
+Push-Location $backendRoot
+try {
+    & $backendPython -m ruff check app tests
+    Assert-CommandSucceeded 'backend lint'
+    & $backendPython -m pytest
+    Assert-CommandSucceeded 'backend tests'
+    & $backendPython -m app.cli.validate_archives
+    Assert-CommandSucceeded 'dataset archive validation'
+}
+finally {
+    Pop-Location
+}
+
+Write-Host 'Checking frontend...' -ForegroundColor Cyan
+Push-Location $frontendRoot
+try {
+    npm run lint
+    Assert-CommandSucceeded 'frontend lint'
+    npm run typecheck
+    Assert-CommandSucceeded 'frontend type check'
+    npm run build
+    Assert-CommandSucceeded 'frontend production build'
+}
+finally {
+    Pop-Location
+}
+
+Write-Host 'All Milestone 1 checks passed.' -ForegroundColor Green

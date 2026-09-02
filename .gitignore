@@ -1,0 +1,51 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+backend/.venv/
+*.egg-info/
+
+# Node / Next.js
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+*.tsbuildinfo
+npm-debug.log*
+
+# Runtime data
+data/app/*.db
+data/app/*.db-*
+data/demo/media/
+data/processed/
+generated/annotated-images/*
+generated/reports/*
+!generated/annotated-images/.gitkeep
+!generated/reports/.gitkeep
+
+# Model artifacts
+models/weights/*
+!models/weights/.gitkeep
+ml/runs/
+
+# Large datasets and archives (datasets live outside this repository)
+/datasets/
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+
+# IDE and OS
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,28 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      APP_ENV: development
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      PARKING_DATA_ROOT: /datasets
+      DATABASE_URL: sqlite:////app/data/app/smart_parking.db
+      CORS_ORIGINS: http://localhost:3000
+    volumes:
+      - "${PARKING_DATA_ROOT}:/datasets:ro"
+      - ./data/app:/app/data/app
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
