@@ -4,14 +4,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { apiErrorMessage, apiFetch, apiUrl } from "@/lib/api-client";
+
 type Check = { key: string; label: string; ready: boolean; detail: string };
 type Readiness = { ready: boolean; mode: string; checks: Check[]; showcase_count: number };
 type Slot = { id: string; occupied: boolean; polygon: number[][] };
 type Scenario = { id: string; dataset: string; lot: string; condition: string; total_spaces: number; occupied_spaces: number; vacant_spaces: number; slots: Slot[] };
 type Analysis = { analysis_id: number; scenario_id: string; dataset: string; model_name: string; total_spaces: number; occupied_spaces: number; vacant_spaces: number; ground_truth_agreement: number; average_confidence: number; processing_time_ms: number; predictions: Array<{ id: string; polygon: number[][]; predicted_occupied: boolean }> };
 type Showcase = { count: number; scenarios: Scenario[] };
-
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
 
 export function PresentationMode() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
@@ -23,14 +23,14 @@ export function PresentationMode() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${apiBase}/demo/readiness`).then((response) => response.ok ? response.json() as Promise<Readiness> : Promise.reject()),
-      fetch(`${apiBase}/demo/showcase`).then((response) => response.ok ? response.json() as Promise<Showcase> : Promise.reject()),
+      apiFetch<Readiness>("/demo/readiness"),
+      apiFetch<Showcase>("/demo/showcase"),
     ])
       .then(([nextReadiness, showcase]) => {
         setReadiness(nextReadiness);
         setScenarios(showcase.scenarios);
       })
-      .catch(() => setError("The local demo APIs are unavailable. Start the backend and refresh."));
+      .catch((reason: unknown) => setError(apiErrorMessage(reason)));
   }, []);
 
   const activeResult = results.find((result) => result.scenario_id === activeId) ?? results.at(-1);
@@ -47,14 +47,11 @@ export function PresentationMode() {
     for (const scenario of scenarios) {
       setRunningId(scenario.id);
       try {
-        const response = await fetch(`${apiBase}/analysis/scenarios/${encodeURIComponent(scenario.id)}`, { method: "POST" });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.detail ?? "Local inference failed");
-        const result = payload as Analysis;
+        const result = await apiFetch<Analysis>(`/analysis/scenarios/${encodeURIComponent(scenario.id)}`, { method: "POST", timeoutMs: 120_000 });
         setResults((current) => [...current, result]);
         setActiveId(result.scenario_id);
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "Local inference failed");
+        setError(apiErrorMessage(reason));
         break;
       }
     }
@@ -91,14 +88,14 @@ export function PresentationMode() {
 
       {!results.length ? (
         <section className="grid gap-5 lg:grid-cols-3">
-          {scenarios.map((scenario, index) => <article className="card overflow-hidden" key={scenario.id}><div className="relative aspect-[16/9] bg-slate-900"><img className="h-full w-full object-cover" src={`${apiBase}/datasets/scenarios/${encodeURIComponent(scenario.id)}/image`} alt={`${scenario.dataset} showcase scenario`} /><span className="absolute left-4 top-4 rounded-full bg-slate-950/80 px-3 py-1 text-xs font-black text-white">{index + 1} · {scenario.dataset}</span></div><div className="p-5"><p className="font-bold">{scenario.lot}</p><p className="mt-1 text-xs text-slate-500">{scenario.condition} · {scenario.total_spaces} annotated spaces</p><div className="mt-4 flex gap-4 text-xs font-bold"><span className="text-emerald-600">{scenario.vacant_spaces} vacant truth</span><span className="text-red-600">{scenario.occupied_spaces} occupied truth</span></div></div></article>)}
+          {scenarios.map((scenario, index) => <article className="card overflow-hidden" key={scenario.id}><div className="relative aspect-[16/9] bg-slate-900"><img className="h-full w-full object-cover" src={apiUrl(`/datasets/scenarios/${encodeURIComponent(scenario.id)}/image`)} alt={`${scenario.dataset} showcase scenario`} /><span className="absolute left-4 top-4 rounded-full bg-slate-950/80 px-3 py-1 text-xs font-black text-white">{index + 1} · {scenario.dataset}</span></div><div className="p-5"><p className="font-bold">{scenario.lot}</p><p className="mt-1 text-xs text-slate-500">{scenario.condition} · {scenario.total_spaces} annotated spaces</p><div className="mt-4 flex gap-4 text-xs font-bold"><span className="text-emerald-600">{scenario.vacant_spaces} vacant truth</span><span className="text-red-600">{scenario.occupied_spaces} occupied truth</span></div></div></article>)}
         </section>
       ) : activeResult && activeScenario ? (
         <section className="card overflow-hidden">
           <div className="flex flex-col justify-between gap-4 border-b border-slate-100 p-5 md:flex-row md:items-center"><div><p className="label">AI showcase result</p><h2 className="mt-1 text-xl font-black">{activeResult.dataset} · {activeScenario.lot}</h2></div><div className="flex flex-wrap gap-2">{results.map((result) => <button key={result.scenario_id} onClick={() => setActiveId(result.scenario_id)} className={result.scenario_id === activeResult.scenario_id ? "rounded-lg bg-slate-900 px-4 py-2 text-xs font-black text-white" : "rounded-lg bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600"}>{result.dataset}</button>)}</div></div>
           <div className="grid xl:grid-cols-[1.55fr_1fr]">
-            <div className="relative bg-slate-900"><img className="block h-auto w-full" src={`${apiBase}/datasets/scenarios/${encodeURIComponent(activeScenario.id)}/image`} alt={`${activeScenario.dataset} AI result`} /><svg className="absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-label="AI prediction overlay">{activeResult.predictions.map((slot) => <polygon key={slot.id} points={slot.polygon.map(([x, y]) => `${x},${y}`).join(" ")} fill={slot.predicted_occupied ? "rgba(239,68,68,.30)" : "rgba(16,185,129,.30)"} stroke={slot.predicted_occupied ? "#ef4444" : "#10b981"} strokeWidth="0.004" vectorEffect="non-scaling-stroke" />)}</svg></div>
-            <div className="p-7"><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">LOCAL AI PREDICTION</span><div className="mt-6 grid grid-cols-3 gap-3">{[["Total", activeResult.total_spaces, "text-slate-900"], ["Vacant", activeResult.vacant_spaces, "text-emerald-600"], ["Occupied", activeResult.occupied_spaces, "text-red-600"]].map(([label, value, color]) => <div className="rounded-2xl bg-slate-50 p-4 text-center" key={label}><p className={`text-2xl font-black ${color}`}>{value}</p><p className="mt-1 text-xs font-bold text-slate-400">{label}</p></div>)}</div><dl className="mt-6 space-y-4 text-sm"><ResultRow label="Average confidence" value={`${(activeResult.average_confidence * 100).toFixed(1)}%`} /><ResultRow label="Ground-truth agreement" value={`${(activeResult.ground_truth_agreement * 100).toFixed(1)}%`} /><ResultRow label="Processing time" value={`${activeResult.processing_time_ms.toFixed(1)} ms`} /><ResultRow label="Saved analysis" value={`#${activeResult.analysis_id}`} /></dl><a href={`${apiBase}/reports/analyses/${activeResult.analysis_id}.json`} className="mt-6 block rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-black text-white">Download detailed result</a></div>
+            <div className="relative bg-slate-900"><img className="block h-auto w-full" src={apiUrl(`/datasets/scenarios/${encodeURIComponent(activeScenario.id)}/image`)} alt={`${activeScenario.dataset} AI result`} /><svg className="absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-label="AI prediction overlay">{activeResult.predictions.map((slot) => <polygon key={slot.id} points={slot.polygon.map(([x, y]) => `${x},${y}`).join(" ")} fill={slot.predicted_occupied ? "rgba(239,68,68,.30)" : "rgba(16,185,129,.30)"} stroke={slot.predicted_occupied ? "#ef4444" : "#10b981"} strokeWidth="0.004" vectorEffect="non-scaling-stroke" />)}</svg></div>
+            <div className="p-7"><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">LOCAL AI PREDICTION</span><div className="mt-6 grid grid-cols-3 gap-3">{[["Total", activeResult.total_spaces, "text-slate-900"], ["Vacant", activeResult.vacant_spaces, "text-emerald-600"], ["Occupied", activeResult.occupied_spaces, "text-red-600"]].map(([label, value, color]) => <div className="rounded-2xl bg-slate-50 p-4 text-center" key={label}><p className={`text-2xl font-black ${color}`}>{value}</p><p className="mt-1 text-xs font-bold text-slate-400">{label}</p></div>)}</div><dl className="mt-6 space-y-4 text-sm"><ResultRow label="Average confidence" value={`${(activeResult.average_confidence * 100).toFixed(1)}%`} /><ResultRow label="Ground-truth agreement" value={`${(activeResult.ground_truth_agreement * 100).toFixed(1)}%`} /><ResultRow label="Processing time" value={`${activeResult.processing_time_ms.toFixed(1)} ms`} /><ResultRow label="Saved analysis" value={`#${activeResult.analysis_id}`} /></dl><a href={apiUrl(`/reports/analyses/${activeResult.analysis_id}.json`)} className="mt-6 block rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-black text-white">Download detailed result</a></div>
           </div>
           <div className="flex flex-col justify-between gap-3 border-t border-slate-100 bg-slate-50 p-5 text-sm md:flex-row md:items-center"><p className="font-semibold text-slate-600">Completed {results.length}/{scenarios.length} showcase analyses</p>{runningId && <p className="font-black text-amber-600">Local inference in progress…</p>}{results.length === scenarios.length && <p className="font-black text-emerald-600">✓ Showcase complete — open Analytics for comparison</p>}</div>
         </section>

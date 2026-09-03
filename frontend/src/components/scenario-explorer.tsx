@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { RetryPanel } from "@/components/retry-panel";
+import { apiErrorMessage, apiFetch, apiUrl } from "@/lib/api-client";
+
 type Slot = { id: string; occupied: boolean; polygon: number[][] };
 type Scenario = {
   id: string;
@@ -33,7 +36,6 @@ type Analysis = {
   predictions: Prediction[];
 };
 type ScenarioResponse = { count: number; scenarios: Scenario[] };
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
 
 export function ScenarioExplorer() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
@@ -46,16 +48,12 @@ export function ScenarioExplorer() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`${apiBase}/datasets/scenarios?limit=500`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Could not load prepared scenarios");
-        return response.json() as Promise<ScenarioResponse>;
-      })
+    apiFetch<ScenarioResponse>("/datasets/scenarios?limit=500")
       .then((payload) => {
         setScenarios(payload.scenarios);
         setScenarioId(payload.scenarios[0]?.id ?? "");
       })
-      .catch((reason: Error) => setError(reason.message))
+      .catch((reason: unknown) => setError(apiErrorMessage(reason)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -87,22 +85,21 @@ export function ScenarioExplorer() {
     setRunning(true);
     setError("");
     try {
-      const response = await fetch(
-        `${apiBase}/analysis/scenarios/${encodeURIComponent(selected.id)}`,
-        { method: "POST" },
+      const payload = await apiFetch<Analysis>(
+        `/analysis/scenarios/${encodeURIComponent(selected.id)}`,
+        { method: "POST", timeoutMs: 120_000 },
       );
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail ?? "Local inference failed");
-      setAnalysis(payload as Analysis);
+      setAnalysis(payload);
       setView("prediction");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Local inference failed");
+      setError(apiErrorMessage(reason));
     } finally {
       setRunning(false);
     }
   }
 
   if (loading) return <div className="card mt-8 p-8 text-sm text-slate-500">Loading catalogue…</div>;
+  if (error && !scenarios.length) return <RetryPanel message={error} />;
   if (!selected) return <div className="card mt-8 p-8 text-sm text-slate-500">Prepare the Demo profile before training the model.</div>;
 
   const predictionView = view === "prediction" && analysis;
@@ -159,7 +156,7 @@ export function ScenarioExplorer() {
         </div>
         <div className="relative bg-slate-900">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="block h-auto w-full" src={`${apiBase}/datasets/scenarios/${encodeURIComponent(selected.id)}/image`} alt={`${selected.dataset} parking scenario`} />
+          <img className="block h-auto w-full" src={apiUrl(`/datasets/scenarios/${encodeURIComponent(selected.id)}/image`)} alt={`${selected.dataset} parking scenario`} />
           <svg className="absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-label="Parking-space overlay">
             {overlaySlots.map((slot) => <polygon key={slot.id} points={slot.polygon.map(([x, y]) => `${x},${y}`).join(" ")} fill={slot.occupied ? "rgba(239,68,68,.30)" : "rgba(16,185,129,.30)"} stroke={slot.occupied ? "#ef4444" : "#10b981"} strokeWidth="0.004" vectorEffect="non-scaling-stroke" />)}
           </svg>

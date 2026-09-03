@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+import { RetryPanel } from "@/components/retry-panel";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
+
 type AnalysisRecord = {
   id: number;
   dataset: string;
@@ -16,21 +19,18 @@ type AnalysisRecord = {
   created_at: string;
 };
 type HistoryResponse = { count: number; analyses: AnalysisRecord[] };
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
-
 export function AnalysisHistory() {
   const [records, setRecords] = useState<AnalysisRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
   useEffect(() => {
-    fetch(`${apiBase}/analysis/history?limit=50`)
-      .then((response) => response.ok ? response.json() as Promise<HistoryResponse> : Promise.reject())
+    apiFetch<HistoryResponse>("/analysis/history?limit=50")
       .then((payload) => setRecords(payload.analyses))
-      .catch(() => setError(true))
+      .catch((reason: unknown) => setError(apiErrorMessage(reason)))
       .finally(() => setLoading(false));
   }, []);
   if (loading) return <div className="card mt-8 p-6 text-sm text-slate-500">Loading analysis history…</div>;
-  if (error) return <div className="card mt-8 p-6 text-sm text-red-600">History API is unavailable.</div>;
+  if (error) return <RetryPanel message={error} />;
   if (!records.length) return <div className="card mt-8 p-10 text-center"><p className="font-bold">No analyses recorded yet</p><p className="mt-2 text-sm text-slate-500">Run a local AI analysis to create the first record.</p></div>;
   return (
     <div className="card mt-8 overflow-hidden">

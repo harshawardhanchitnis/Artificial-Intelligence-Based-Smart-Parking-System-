@@ -2,23 +2,24 @@
 
 import { useEffect, useState } from "react";
 
+import { RetryPanel } from "@/components/retry-panel";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
+
 type DatasetMetric = { dataset: string; runs: number; spaces_analysed: number; occupancy_rate: number; average_confidence: number | null; ground_truth_agreement: number | null };
 type RecentRun = { id: number; dataset: string; occupancy_rate: number; created_at: string };
 type Summary = { total_runs: number; total_spaces_analysed: number; average_processing_time_ms: number | null; average_confidence: number | null; ground_truth_agreement: number | null; dataset_breakdown: DatasetMetric[]; recent_runs: RecentRun[] };
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
 const percent = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(1)}%`;
 
 export function AnalyticsDashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
   useEffect(() => {
-    fetch(`${apiBase}/analytics/summary`)
-      .then((response) => response.ok ? response.json() as Promise<Summary> : Promise.reject())
+    apiFetch<Summary>("/analytics/summary")
       .then(setSummary)
-      .catch(() => setError(true));
+      .catch((reason: unknown) => setError(apiErrorMessage(reason)));
   }, []);
 
-  if (error) return <div className="card mt-8 p-6 text-sm text-red-600">Analytics API is unavailable.</div>;
+  if (error) return <RetryPanel message={error} />;
   if (!summary) return <div className="card mt-8 p-6 text-sm text-slate-500">Loading operational analytics…</div>;
 
   const cards = [

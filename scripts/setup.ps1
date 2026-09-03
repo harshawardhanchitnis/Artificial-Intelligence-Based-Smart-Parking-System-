@@ -61,5 +61,5 @@ finally {
 }
 
 Write-Host ''
-Write-Host 'Milestone 4 setup completed successfully.' -ForegroundColor Green
+Write-Host 'Smart Parking application setup completed successfully.' -ForegroundColor Green
 Write-Host 'Use scripts\start-backend.ps1 and scripts\start-frontend.ps1 in two terminals.'

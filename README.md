@@ -30,6 +30,10 @@ The application now includes:
 - Detailed saved-analysis pages with prediction/ground-truth and errors-only overlays
 - Reproducible, group-safe train/validation/unseen-test benchmark preparation
 - Independent benchmark metrics separated from repeated application-run agreement
+- Deep seven-point readiness checks with SQLite integrity validation
+- Request IDs, safe API errors, response timing, and browser security headers
+- Frontend API timeouts, retry states, and a live local-system status indicator
+- Repeatable nine-route runtime smoke testing with optional persisted inference
 
 The application now distinguishes verified dataset ground truth from actual local AI predictions, persists model-quality fields, and turns saved runs into presentation analytics and reports. The lightweight model runs on CPU, requires no pretrained download, and remains fully offline. Full dataset extraction is still optional and is not required for the demo.
 
@@ -91,6 +95,16 @@ Then open:
 ```powershell
 powershell -ExecutionPolicy Bypass -File '.\scripts\verify.ps1'
 ```
+
+With the backend and frontend running, verify the complete local product without changing
+history:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File '.\scripts\reliability-check.ps1'
+```
+
+To include one real inference and persistence check against the current local database, add
+`-IncludeInference`. This intentionally creates one new analysis-history row.
 
 ## Dataset policy
 

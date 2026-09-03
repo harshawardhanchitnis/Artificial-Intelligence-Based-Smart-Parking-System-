@@ -6,7 +6,7 @@ export default function SystemPage() {
     <SectionPlaceholder
       eyebrow="Environment"
       title="System readiness"
-      description="Confirm the local application, database, and external dataset directory before presenting."
+      description="Run deep local checks across the database, datasets, demo catalogue, model, and independent benchmark before presenting."
     >
       <SystemStatus />
     </SectionPlaceholder>

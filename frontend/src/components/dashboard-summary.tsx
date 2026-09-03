@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 
+import { RetryPanel } from "@/components/retry-panel";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
+
 type Summary = {
   prepared: boolean;
   scenario_count: number;
@@ -11,21 +14,18 @@ type Summary = {
   latest_analysis: { dataset: string; vacant_spaces: number; occupied_spaces: number } | null;
 };
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
-
 export function DashboardSummary() {
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`${apiBase}/dashboard/summary`)
-      .then((response) => response.ok ? response.json() as Promise<Summary> : Promise.reject())
+    apiFetch<Summary>("/dashboard/summary")
       .then(setSummary)
-      .catch(() => setError(true));
+      .catch((reason: unknown) => setError(apiErrorMessage(reason)));
   }, []);
 
   if (error) {
-    return <div className="card mt-8 p-5 text-sm font-semibold text-red-600">Dashboard API is unavailable. Start the backend and refresh.</div>;
+    return <RetryPanel message={error} />;
   }
 
   const metrics = [

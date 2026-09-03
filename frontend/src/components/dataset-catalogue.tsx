@@ -2,20 +2,20 @@
 
 import { useEffect, useState } from "react";
 
+import { RetryPanel } from "@/components/retry-panel";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
+
 type Dataset = { name: string; scenario_count: number; lots: string[]; conditions: string[] };
 type Catalogue = { prepared: boolean; scenario_count: number; datasets: Dataset[] };
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
-
 export function DatasetCatalogue() {
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
   useEffect(() => {
-    fetch(`${apiBase}/datasets/catalogue`)
-      .then((response) => response.ok ? response.json() as Promise<Catalogue> : Promise.reject())
+    apiFetch<Catalogue>("/datasets/catalogue")
       .then(setCatalogue)
-      .catch(() => setError(true));
+      .catch((reason: unknown) => setError(apiErrorMessage(reason)));
   }, []);
-  if (error) return <div className="card mt-8 p-6 text-sm text-red-600">Catalogue API is unavailable.</div>;
+  if (error) return <RetryPanel message={error} />;
   if (!catalogue) return <div className="card mt-8 p-6 text-sm text-slate-500">Loading catalogue…</div>;
   if (!catalogue.prepared) return <div className="card mt-8 p-6 text-sm text-slate-500">Prepare the Demo profile to populate this page.</div>;
   return (

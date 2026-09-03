@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { ConnectionStatus } from "@/components/connection-status";
+
 const navigation = [
   { href: "/", label: "Dashboard", symbol: "▦" },
   { href: "/presentation", label: "Presentation", symbol: "▶" },
@@ -69,9 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </p>
             <p className="font-bold text-slate-800">Smart Parking System</p>
           </div>
-          <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
-            Local system ready
-          </div>
+          <ConnectionStatus />
         </header>
         <div className="p-6 lg:p-10">{children}</div>
       </main>

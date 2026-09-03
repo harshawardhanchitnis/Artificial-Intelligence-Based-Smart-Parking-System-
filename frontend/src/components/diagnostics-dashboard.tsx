@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { RetryPanel } from "@/components/retry-panel";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
+
 type Matrix = { true_occupied: number; true_vacant: number; false_occupied: number; false_vacant: number };
 type RunMetrics = Matrix & { evaluated_slots: number; accuracy: number | null; balanced_accuracy: number | null; precision: number | null; recall: number | null; specificity: number | null; f1_score: number | null };
 type BenchmarkMetrics = { accuracy: number; balanced_accuracy: number; precision_occupied: number; recall_occupied: number; f1_occupied: number; specificity_vacant: number; confusion_matrix: Matrix; unique_samples: number; unique_sources: number; unique_groups: number; majority_baseline_accuracy: number };
@@ -12,7 +15,6 @@ type ApplicationRuns = { semantic_label: string; total_runs: number; prediction_
 type Benchmark = { validation: BenchmarkMetrics; unseen_test: BenchmarkMetrics; unseen_test_by_dataset: DatasetBenchmark[] };
 type Diagnostics = { application_runs: ApplicationRuns; independent_benchmark: Benchmark | null; benchmark_available: boolean };
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
 const percent = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(1)}%`;
 
 function MetricCards({ metrics }: { metrics: BenchmarkMetrics }) {
@@ -40,15 +42,14 @@ function MatrixPanel({ title, metrics }: { title: string; metrics: BenchmarkMetr
 
 export function DiagnosticsDashboard() {
   const [report, setReport] = useState<Diagnostics | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
   useEffect(() => {
-    fetch(`${apiBase}/diagnostics/summary`)
-      .then((response) => response.ok ? response.json() as Promise<Diagnostics> : Promise.reject())
+    apiFetch<Diagnostics>("/diagnostics/summary")
       .then(setReport)
-      .catch(() => setError(true));
+      .catch((reason: unknown) => setError(apiErrorMessage(reason)));
   }, []);
 
-  if (error) return <div className="card mt-8 p-6 text-sm text-red-600">Diagnostics API is unavailable.</div>;
+  if (error) return <RetryPanel message={error} />;
   if (!report) return <div className="card mt-8 p-6 text-sm text-slate-500">Loading model benchmark and stored-run diagnostics…</div>;
   const runs = report.application_runs;
   const benchmark = report.independent_benchmark;

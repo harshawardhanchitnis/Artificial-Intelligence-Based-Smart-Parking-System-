@@ -36,6 +36,8 @@ try {
     Assert-CommandSucceeded 'independent model benchmark'
     & $backendPython -m app.cli.verify_demo
     Assert-CommandSucceeded 'offline presentation preflight'
+    & $backendPython -m app.cli.verify_reliability
+    Assert-CommandSucceeded 'deep application readiness'
 }
 finally {
     Pop-Location
@@ -55,4 +57,4 @@ finally {
     Pop-Location
 }
 
-Write-Host 'All baseline ML validation correction checks passed.' -ForegroundColor Green
+Write-Host 'All Milestone 7 hardening checks passed.' -ForegroundColor Green

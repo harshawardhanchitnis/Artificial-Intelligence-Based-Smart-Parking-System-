@@ -1,13 +1,32 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.db.session import engine
 from app.ml.model_store import model_status
+from app.services.reliability_service import collect_readiness
 
 router = APIRouter()
+
+
+@router.get("/health/live")
+def liveness() -> dict[str, object]:
+    return {
+        "status": "alive",
+        "timestamp": datetime.now(UTC).isoformat(),
+        "version": "0.7.0",
+    }
+
+
+@router.get("/health/ready")
+def readiness(response: Response) -> dict[str, object]:
+    settings = get_settings()
+    report = collect_readiness(settings.parking_data_root, settings.model_root, engine)
+    if not report["ready"]:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return report
 
 
 @router.get("/health")

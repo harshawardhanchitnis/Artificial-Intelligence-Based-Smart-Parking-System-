@@ -58,6 +58,20 @@ Frontend presents results
 
 The catalogue remains unchanged. Numeric model weights and metadata live under the external data root, and a SHA-256 check is required before inference. No pickle, cloud model, camera, sensor, or live feed is involved.
 
+## Milestone 7 reliability boundary
+
+Milestone 7 keeps liveness separate from readiness. `/api/v1/health/live` confirms that the API
+process can respond. `/api/v1/health/ready` performs seven local dependency checks and returns
+HTTP 503 when the product is not presentation-ready. The checks cover the external data root,
+SQLite `quick_check`, prepared catalogue, three-dataset coverage, showcase images, the local model,
+and the immutable unseen benchmark metadata.
+
+Every API response includes a validated request ID, elapsed processing time, and defensive browser
+headers. Expected HTTP and validation failures use a stable JSON error envelope; unexpected failures
+are logged with their request ID without exposing a traceback to the browser. SQLite uses a 30-second
+busy timeout, foreign-key enforcement, write-ahead logging, and connection pre-ping for safer local
+concurrency.
+
 ## Boundaries
 
 There are no hardware adapters, live streams, external inference APIs, research experiments, reservation payments, or navigation services in the first product version.
