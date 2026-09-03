@@ -1,8 +1,4 @@
-param(
-    [ValidateRange(0.15, 0.40)]
-    [double]$ValidationFraction = 0.25,
-    [int]$RandomState = 42
-)
+param([int]$RandomState = 42)
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -17,8 +13,9 @@ Push-Location $backendRoot
 try {
     & $backendPython -m app.cli.verify_prepared_data
     if ($LASTEXITCODE -ne 0) { throw 'Prepared-data verification failed.' }
+    & $backendPython -m app.cli.verify_benchmark
+    if ($LASTEXITCODE -ne 0) { throw 'ML benchmark verification failed.' }
     & $backendPython -m app.cli.train_occupancy_model `
-        --validation-fraction $ValidationFraction `
         --random-state $RandomState
     if ($LASTEXITCODE -ne 0) { throw "Model training failed with exit code $LASTEXITCODE." }
 }

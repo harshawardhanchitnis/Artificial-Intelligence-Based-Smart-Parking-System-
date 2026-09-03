@@ -1,5 +1,15 @@
 # Foundation architecture
 
+## Baseline ML validation correction
+
+`Source archives → deterministic grouped manifest → train-only fit → validation threshold → unseen test benchmark`
+
+The v2 local classifier is fitted only on the Benchmark profile's training partition. Validation
+selects the decision threshold, while unseen test samples remain excluded from every fitting and
+tuning decision. The Diagnostics page presents this independent benchmark separately from
+repeated application-run agreement. The eight-scenario demo catalogue remains the source of
+interactive presentation images and is not used as the scientific benchmark.
+
 ## Milestone 6 diagnostic flow
 
 `Saved prediction JSON → confusion classification → overall/dataset metrics → diagnostics UI → analysis detail inspection`

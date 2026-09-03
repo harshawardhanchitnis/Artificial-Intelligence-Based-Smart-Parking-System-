@@ -13,7 +13,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Train the local occupancy classifier")
     parser.add_argument("--data-root", type=Path, default=None)
     parser.add_argument("--model-root", type=Path, default=None)
-    parser.add_argument("--validation-fraction", type=float, default=0.25)
     parser.add_argument("--random-state", type=int, default=42)
     arguments = parser.parse_args()
     settings = get_settings()
@@ -23,7 +22,6 @@ def main() -> int:
         report = train_model(
             data_root,
             model_root,
-            validation_fraction=arguments.validation_fraction,
             random_state=arguments.random_state,
         )
     except (TrainingError, OSError, ValueError) as exc:

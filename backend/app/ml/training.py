@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import platform
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,20 +17,21 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
 
-from app.ml.features import FEATURE_VERSION, scenario_features
+from app.datasets.benchmark import PARTITIONS, verify_benchmark
+from app.ml.features import FEATURE_VERSION, extract_features
 from app.ml.model_store import MODEL_NAME, save_model
-from app.services.catalogue_service import CatalogueRepository
 
 
 class TrainingError(RuntimeError):
     """Raised when a valid occupancy model cannot be trained."""
 
 
-def _metrics(labels: np.ndarray, predictions: np.ndarray) -> dict[str, object]:
+def classification_metrics(labels: np.ndarray, predictions: np.ndarray) -> dict[str, object]:
     matrix = confusion_matrix(labels, predictions, labels=[0, 1])
+    true_vacant, false_occupied = (int(value) for value in matrix[0])
+    false_vacant, true_occupied = (int(value) for value in matrix[1])
     return {
         "accuracy": round(float(accuracy_score(labels, predictions)), 6),
         "balanced_accuracy": round(float(balanced_accuracy_score(labels, predictions)), 6),
@@ -38,28 +40,17 @@ def _metrics(labels: np.ndarray, predictions: np.ndarray) -> dict[str, object]:
         ),
         "recall_occupied": round(float(recall_score(labels, predictions, zero_division=0)), 6),
         "f1_occupied": round(float(f1_score(labels, predictions, zero_division=0)), 6),
-        "confusion_matrix": matrix.tolist(),
+        "specificity_vacant": round(
+            true_vacant / (true_vacant + false_occupied) if true_vacant + false_occupied else 0.0,
+            6,
+        ),
+        "confusion_matrix": {
+            "true_vacant": true_vacant,
+            "false_occupied": false_occupied,
+            "false_vacant": false_vacant,
+            "true_occupied": true_occupied,
+        },
     }
-
-
-def _choose_group_split(
-    features: np.ndarray,
-    labels: np.ndarray,
-    groups: np.ndarray,
-    *,
-    validation_fraction: float,
-    random_state: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    splitter = GroupShuffleSplit(
-        n_splits=40, test_size=validation_fraction, random_state=random_state
-    )
-    for train_indices, validation_indices in splitter.split(features, labels, groups):
-        if (
-            np.unique(labels[train_indices]).size == 2
-            and np.unique(labels[validation_indices]).size == 2
-        ):
-            return train_indices, validation_indices
-    raise TrainingError("Could not produce a group holdout containing both classes")
 
 
 def _fit(features: np.ndarray, labels: np.ndarray, random_state: int) -> tuple:
@@ -78,92 +69,150 @@ def _fit(features: np.ndarray, labels: np.ndarray, random_state: int) -> tuple:
     return scaler, classifier
 
 
+def _load_rows(data_root: Path) -> tuple[list[dict[str, object]], dict[str, object]]:
+    benchmark_root = data_root / "prepared" / "ml-benchmark"
+    verification = verify_benchmark(data_root)
+    report = json.loads((benchmark_root / "report.json").read_text(encoding="utf-8"))
+    rows = [
+        json.loads(line)
+        for line in (benchmark_root / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    return rows, {**report, "verification": verification}
+
+
+def _extract(
+    data_root: Path, rows: list[dict[str, object]], progress
+) -> tuple[np.ndarray, np.ndarray]:
+    root = data_root / "prepared" / "ml-benchmark"
+    feature_rows: list[np.ndarray] = []
+    labels: list[int] = []
+    for index, row in enumerate(rows, start=1):
+        with Image.open(root / str(row["patch_path"])) as image:
+            feature_rows.append(extract_features(image.convert("RGB")))
+        labels.append(int(row["label"]))
+        if progress and index % 500 == 0:
+            progress(f"Features: {index:,}/{len(rows):,} benchmark samples")
+    return np.asarray(feature_rows, dtype=np.float64), np.asarray(labels, dtype=np.int64)
+
+
+def _predict(
+    scaler: StandardScaler,
+    classifier: LogisticRegression,
+    features: np.ndarray,
+    threshold: float,
+) -> np.ndarray:
+    probabilities = classifier.predict_proba(scaler.transform(features))[:, 1]
+    return (probabilities >= threshold).astype(np.int64)
+
+
+def _evaluation(
+    rows: list[dict[str, object]], labels: np.ndarray, predictions: np.ndarray
+) -> dict[str, object]:
+    metrics = classification_metrics(labels, predictions)
+    majority = max(int(np.sum(labels == 0)), int(np.sum(labels == 1))) / len(labels)
+    return {
+        **metrics,
+        "unique_samples": len(rows),
+        "unique_sources": len({(row["dataset"], row["source_id"]) for row in rows}),
+        "unique_groups": len({(row["dataset"], row["group_id"]) for row in rows}),
+        "class_counts": {
+            "vacant": int(np.sum(labels == 0)),
+            "occupied": int(np.sum(labels == 1)),
+        },
+        "majority_baseline_accuracy": round(float(majority), 6),
+    }
+
+
 def train_model(
     data_root: Path,
     model_root: Path,
     *,
-    validation_fraction: float = 0.25,
     random_state: int = 42,
     progress=print,
 ) -> dict[str, object]:
-    if not 0.15 <= validation_fraction <= 0.4:
-        raise TrainingError("validation_fraction must be between 0.15 and 0.40")
-    repository = CatalogueRepository(data_root)
-    scenarios = repository.list_scenarios(limit=10_000)
-    if len(scenarios) < 3:
-        raise TrainingError("At least three prepared scenarios are required")
+    rows, benchmark_report = _load_rows(data_root)
+    by_partition = {
+        partition: [row for row in rows if row["partition"] == partition]
+        for partition in PARTITIONS
+    }
+    minimums = {"train": 10, "validation": 4, "test": 4}
+    if any(len(by_partition[name]) < minimums[name] for name in PARTITIONS):
+        raise TrainingError("Benchmark partitions do not contain enough samples")
 
-    feature_rows: list[np.ndarray] = []
-    labels: list[int] = []
-    groups: list[str] = []
-    dataset_counts: dict[str, int] = {}
-    for index, scenario in enumerate(scenarios, start=1):
-        scenario_id = str(scenario["id"])
-        image_path = repository.image_path(scenario_id)
-        slots = scenario.get("slots")
-        if not isinstance(slots, list) or not slots:
-            continue
-        with Image.open(image_path) as image:
-            extracted = scenario_features(image.convert("RGB"), slots)
-        feature_rows.extend(extracted)
-        labels.extend(int(bool(slot["occupied"])) for slot in slots)
-        groups.extend([scenario_id] * len(slots))
-        dataset = str(scenario["dataset"])
-        dataset_counts[dataset] = dataset_counts.get(dataset, 0) + len(slots)
-        if progress:
-            progress(f"Features: {index}/{len(scenarios)} scenarios ({len(labels)} slots)")
+    ordered = [row for partition in PARTITIONS for row in by_partition[partition]]
+    features, labels = _extract(data_root, ordered, progress)
+    offsets: dict[str, slice] = {}
+    start = 0
+    for partition in PARTITIONS:
+        stop = start + len(by_partition[partition])
+        offsets[partition] = slice(start, stop)
+        start = stop
 
-    features = np.asarray(feature_rows, dtype=np.float64)
-    label_array = np.asarray(labels, dtype=np.int64)
-    group_array = np.asarray(groups)
-    if features.ndim != 2 or features.shape[0] < 20:
-        raise TrainingError("At least 20 labelled slots are required")
-    if np.unique(label_array).size != 2:
-        raise TrainingError("Training data must include vacant and occupied spaces")
-
-    train_indices, validation_indices = _choose_group_split(
-        features,
-        label_array,
-        group_array,
-        validation_fraction=validation_fraction,
-        random_state=random_state,
-    )
-    validation_scaler, validation_model = _fit(
-        features[train_indices], label_array[train_indices], random_state
-    )
-    probabilities = validation_model.predict_proba(
-        validation_scaler.transform(features[validation_indices])
+    train_slice = offsets["train"]
+    scaler, classifier = _fit(features[train_slice], labels[train_slice], random_state)
+    validation_slice = offsets["validation"]
+    validation_probabilities = classifier.predict_proba(
+        scaler.transform(features[validation_slice])
     )[:, 1]
-    threshold_candidates = np.linspace(0.3, 0.7, 17)
+    threshold_candidates = np.linspace(0.2, 0.8, 25)
     threshold = max(
         threshold_candidates,
         key=lambda value: balanced_accuracy_score(
-            label_array[validation_indices], probabilities >= value
+            labels[validation_slice], validation_probabilities >= value
         ),
     )
-    validation_predictions = (probabilities >= threshold).astype(np.int64)
-    validation_metrics = _metrics(label_array[validation_indices], validation_predictions)
 
-    final_scaler, final_model = _fit(features, label_array, random_state)
+    validation_predictions = (validation_probabilities >= threshold).astype(np.int64)
+    validation = _evaluation(
+        by_partition["validation"], labels[validation_slice], validation_predictions
+    )
+    test_slice = offsets["test"]
+    test_predictions = _predict(scaler, classifier, features[test_slice], float(threshold))
+    test = _evaluation(by_partition["test"], labels[test_slice], test_predictions)
+    test_by_dataset = []
+    test_rows = by_partition["test"]
+    test_labels = labels[test_slice]
+    for dataset in sorted({str(row["dataset"]) for row in test_rows}):
+        indices = np.asarray(
+            [index for index, row in enumerate(test_rows) if row["dataset"] == dataset]
+        )
+        test_by_dataset.append(
+            {
+                "dataset": dataset,
+                **_evaluation(
+                    [test_rows[index] for index in indices],
+                    test_labels[indices],
+                    test_predictions[indices],
+                ),
+            }
+        )
+
     trained_at = datetime.now(UTC).isoformat()
+    partition_counts = benchmark_report["partition_counts"]
     metadata = {
         "trained_at": trained_at,
         "algorithm": "standardized-logistic-regression",
         "feature_version": FEATURE_VERSION,
         "feature_count": int(features.shape[1]),
-        "training_samples": int(features.shape[0]),
-        "scenario_count": len(set(groups)),
-        "class_counts": {
-            "vacant": int(np.sum(label_array == 0)),
-            "occupied": int(np.sum(label_array == 1)),
-        },
-        "dataset_slot_counts": dict(sorted(dataset_counts.items())),
-        "validation_strategy": "scenario-group-holdout",
-        "validation_samples": int(validation_indices.size),
-        "validation_scenarios": sorted(set(group_array[validation_indices].tolist())),
-        "validation_metrics": validation_metrics,
-        "decision_threshold": round(float(threshold), 6),
+        "training_samples": len(by_partition["train"]),
+        "validation_samples": len(by_partition["validation"]),
+        "test_samples": len(by_partition["test"]),
+        "datasets_used_for_training": sorted(
+            {str(row["dataset"]) for row in by_partition["train"]}
+        ),
+        "class_distributions": {partition: partition_counts[partition] for partition in PARTITIONS},
+        "split_definitions": benchmark_report["split_definitions"],
+        "benchmark_manifest_sha256": benchmark_report["manifest_sha256"],
         "random_state": random_state,
+        "decision_threshold": round(float(threshold), 6),
+        "fitting_policy": "train-only; validation selects threshold; test remains unseen",
+        "independent_benchmark": {
+            "schema_version": "1.0",
+            "validation": validation,
+            "unseen_test": test,
+            "unseen_test_by_dataset": test_by_dataset,
+        },
         "runtime": {
             "python": platform.python_version(),
             "numpy": np.__version__,
@@ -172,10 +221,10 @@ def train_model(
     }
     saved = save_model(
         model_root,
-        coefficient=final_model.coef_[0],
-        intercept=float(final_model.intercept_[0]),
-        feature_mean=final_scaler.mean_,
-        feature_scale=final_scaler.scale_,
+        coefficient=classifier.coef_[0],
+        intercept=float(classifier.intercept_[0]),
+        feature_mean=scaler.mean_,
+        feature_scale=scaler.scale_,
         threshold=float(threshold),
         metadata=metadata,
     )
@@ -184,7 +233,9 @@ def train_model(
         "model_name": MODEL_NAME,
         "model_root": str(model_root.resolve()),
         "trained_at": trained_at,
-        "training_samples": int(features.shape[0]),
-        "validation_metrics": validation_metrics,
+        "training_samples": len(by_partition["train"]),
+        "validation": validation,
+        "unseen_test": test,
+        "unseen_test_by_dataset": test_by_dataset,
         "metadata": saved,
     }

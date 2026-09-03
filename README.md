@@ -2,7 +2,7 @@
 
 An offline, dataset-driven smart-parking application. The product analyses preloaded parking-lot images and presents occupied and vacant spaces without cameras, sensors, live feeds, or cloud AI APIs.
 
-## Milestone 6 status
+## Baseline ML validation correction status
 
 The application now includes:
 
@@ -28,6 +28,8 @@ The application now includes:
 - Confusion-matrix diagnostics with accuracy, precision, recall, specificity, and F1
 - Dataset-level AI quality comparison and recent error inspection queue
 - Detailed saved-analysis pages with prediction/ground-truth and errors-only overlays
+- Reproducible, group-safe train/validation/unseen-test benchmark preparation
+- Independent benchmark metrics separated from repeated application-run agreement
 
 The application now distinguishes verified dataset ground truth from actual local AI predictions, persists model-quality fields, and turns saved runs into presentation analytics and reports. The lightweight model runs on CPU, requires no pretrained download, and remains fully offline. Full dataset extraction is still optional and is not required for the demo.
 
@@ -52,12 +54,14 @@ The setup script creates `backend\.venv`, installs the backend and frontend depe
 
 Existing Milestone 3 databases are upgraded safely during setup. The migration can also be run directly with `scripts\migrate-database.ps1`.
 
-Prepare the lightweight offline catalogue:
+Prepare the lightweight offline catalogue and scientific benchmark:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File '.\scripts\prepare-datasets.ps1' -Profile Plan
 powershell -ExecutionPolicy Bypass -File '.\scripts\prepare-datasets.ps1' -Profile Demo -SamplesPerDataset 3
+powershell -ExecutionPolicy Bypass -File '.\scripts\prepare-datasets.ps1' -Profile Benchmark
 powershell -ExecutionPolicy Bypass -File '.\scripts\train-model.ps1'
+powershell -ExecutionPolicy Bypass -File '.\scripts\benchmark-model.ps1'
 ```
 
 ## Start the application
@@ -91,6 +95,9 @@ powershell -ExecutionPolicy Bypass -File '.\scripts\verify.ps1'
 ## Dataset policy
 
 The original datasets, extracted images, generated demo media, SQLite databases, and trained model weights are not committed to Git. The external dataset root is configured with `PARKING_DATA_ROOT` in `.env`.
+
+The bounded benchmark cache is written under `PARKING_DATA_ROOT\prepared\ml-benchmark`.
+Its manifest, selected patches, reports, and model artifacts remain local and outside Git.
 
 ## Project boundaries
 

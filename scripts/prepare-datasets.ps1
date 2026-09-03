@@ -1,8 +1,15 @@
 param(
-    [ValidateSet('Plan', 'Demo', 'Full')]
+    [ValidateSet('Plan', 'Demo', 'Benchmark', 'Full')]
     [string]$Profile = 'Demo',
     [ValidateRange(1, 30)]
     [int]$SamplesPerDataset = 3,
+    [ValidateRange(50, 10000)]
+    [int]$TrainPerClass = 1000,
+    [ValidateRange(50, 5000)]
+    [int]$ValidationPerClass = 300,
+    [ValidateRange(50, 5000)]
+    [int]$TestPerClass = 300,
+    [int]$RandomSeed = 42,
     [switch]$Force,
     [switch]$ConfirmFullExtraction
 )
@@ -21,6 +28,16 @@ switch ($Profile) {
     'Plan' { $arguments += 'plan' }
     'Demo' {
         $arguments += @('demo', '--samples-per-dataset', $SamplesPerDataset)
+        if ($Force) { $arguments += '--force' }
+    }
+    'Benchmark' {
+        $arguments += @(
+            'benchmark',
+            '--train-per-class', $TrainPerClass,
+            '--validation-per-class', $ValidationPerClass,
+            '--test-per-class', $TestPerClass,
+            '--random-seed', $RandomSeed
+        )
         if ($Force) { $arguments += '--force' }
     }
     'Full' {

@@ -11,8 +11,8 @@ import numpy as np
 
 from app.ml.features import FEATURE_VERSION
 
-MODEL_SCHEMA_VERSION = "1.0"
-MODEL_NAME = "parking-occupancy-logistic-v1"
+MODEL_SCHEMA_VERSION = "2.0"
+MODEL_NAME = "parking-occupancy-logistic-v2"
 WEIGHTS_FILENAME = f"{MODEL_NAME}.npz"
 METADATA_FILENAME = f"{MODEL_NAME}.json"
 
@@ -105,6 +105,13 @@ def load_model(model_root: Path) -> ModelArtifact:
         raise ModelNotReadyError("Unsupported model schema")
     if metadata.get("feature_version") != FEATURE_VERSION:
         raise ModelNotReadyError("Model feature version does not match the application")
+    benchmark = metadata.get("independent_benchmark")
+    if not isinstance(benchmark, dict) or not isinstance(benchmark.get("unseen_test"), dict):
+        raise ModelNotReadyError("Model metadata lacks an independent unseen benchmark")
+    if metadata.get("fitting_policy") != (
+        "train-only; validation selects threshold; test remains unseen"
+    ):
+        raise ModelNotReadyError("Model fitting policy is not leakage-safe")
     if metadata.get("weights_sha256") != _sha256(weights_path):
         raise ModelNotReadyError("Model weights checksum does not match metadata")
 
@@ -148,5 +155,7 @@ def model_status(model_root: Path) -> dict[str, object]:
         "feature_version": FEATURE_VERSION,
         "trained_at": artifact.metadata.get("trained_at"),
         "training_samples": artifact.metadata.get("training_samples"),
-        "validation_metrics": artifact.metadata.get("validation_metrics"),
+        "validation_samples": artifact.metadata.get("validation_samples"),
+        "test_samples": artifact.metadata.get("test_samples"),
+        "independent_benchmark": artifact.metadata.get("independent_benchmark"),
     }

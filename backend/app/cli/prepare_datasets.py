@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from app.core.config import get_settings
+from app.datasets.benchmark import prepare_benchmark
 from app.datasets.preparation import (
     PreparationError,
     plan_preparation,
@@ -22,6 +23,14 @@ def parser() -> argparse.ArgumentParser:
     demo = subcommands.add_parser("demo", help="Build the lightweight demo catalogue")
     demo.add_argument("--samples-per-dataset", type=int, default=3)
     demo.add_argument("--force", action="store_true")
+    benchmark = subcommands.add_parser(
+        "benchmark", help="Build leakage-safe ML train/validation/test patches"
+    )
+    benchmark.add_argument("--train-per-class", type=int, default=1000)
+    benchmark.add_argument("--validation-per-class", type=int, default=300)
+    benchmark.add_argument("--test-per-class", type=int, default=300)
+    benchmark.add_argument("--random-seed", type=int, default=42)
+    benchmark.add_argument("--force", action="store_true")
     full = subcommands.add_parser("full", help="Extract all source archives")
     full.add_argument("--confirm-full-extraction", action="store_true")
     full.add_argument("--force", action="store_true")
@@ -38,6 +47,17 @@ def main() -> int:
             result = prepare_demo(
                 data_root,
                 samples_per_dataset=arguments.samples_per_dataset,
+                force=arguments.force,
+            )
+        elif arguments.profile == "benchmark":
+            result = prepare_benchmark(
+                data_root,
+                samples_per_class={
+                    "train": arguments.train_per_class,
+                    "validation": arguments.validation_per_class,
+                    "test": arguments.test_per_class,
+                },
+                random_seed=arguments.random_seed,
                 force=arguments.force,
             )
         else:

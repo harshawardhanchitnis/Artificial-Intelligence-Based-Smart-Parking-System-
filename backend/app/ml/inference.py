@@ -33,7 +33,12 @@ def analyse_scenario(data_root: Path, model_root: Path, scenario_id: str) -> dic
         truth = bool(slot["occupied"])
         prediction = bool(predicted)
         agreements += int(truth == prediction)
-        confidence = float(probability if prediction else 1.0 - probability)
+        confidence = (
+            0.5
+            + 0.5 * (float(probability) - artifact.threshold) / (1.0 - artifact.threshold)
+            if prediction
+            else 0.5 + 0.5 * (artifact.threshold - float(probability)) / artifact.threshold
+        )
         predictions.append(
             {
                 "id": str(slot["id"]),
@@ -89,7 +94,7 @@ def verify_model(data_root: Path, model_root: Path) -> dict[str, object]:
         "valid": True,
         "scenario_count": len(results),
         "slot_count": total_slots,
-        "catalogue_ground_truth_agreement": round(weighted_agreement, 6),
+        "catalogue_smoke_agreement": round(weighted_agreement, 6),
         "average_processing_time_ms": round(
             sum(float(result["processing_time_ms"]) for result in results) / len(results),
             3,

@@ -28,8 +28,12 @@ try {
     Assert-CommandSucceeded 'dataset archive validation'
     & $backendPython -m app.cli.verify_prepared_data
     Assert-CommandSucceeded 'prepared demo verification'
+    & $backendPython -m app.cli.verify_benchmark
+    Assert-CommandSucceeded 'leakage-safe benchmark verification'
     & $backendPython -m app.cli.verify_occupancy_model
     Assert-CommandSucceeded 'local occupancy model verification'
+    & $backendPython -m app.cli.show_model_benchmark
+    Assert-CommandSucceeded 'independent model benchmark'
     & $backendPython -m app.cli.verify_demo
     Assert-CommandSucceeded 'offline presentation preflight'
 }
@@ -51,4 +55,4 @@ finally {
     Pop-Location
 }
 
-Write-Host 'All Milestone 6 checks passed.' -ForegroundColor Green
+Write-Host 'All baseline ML validation correction checks passed.' -ForegroundColor Green
