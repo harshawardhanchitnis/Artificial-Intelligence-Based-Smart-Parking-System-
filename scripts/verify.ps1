@@ -51,4 +51,4 @@ finally {
     Pop-Location
 }
 
-Write-Host 'All Milestone 5 checks passed.' -ForegroundColor Green
+Write-Host 'All Milestone 6 checks passed.' -ForegroundColor Green

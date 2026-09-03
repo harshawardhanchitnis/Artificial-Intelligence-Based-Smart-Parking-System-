@@ -11,6 +11,7 @@ const navigation = [
   { href: "/parking-lots", label: "Parking lots", symbol: "P" },
   { href: "/history", label: "History", symbol: "↺" },
   { href: "/analytics", label: "Analytics", symbol: "⌁" },
+  { href: "/diagnostics", label: "AI diagnostics", symbol: "◇" },
   { href: "/reports", label: "Reports", symbol: "▤" },
   { href: "/system", label: "System", symbol: "⚙" },
 ];

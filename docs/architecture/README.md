@@ -1,5 +1,11 @@
 # Foundation architecture
 
+## Milestone 6 diagnostic flow
+
+`Saved prediction JSON → confusion classification → overall/dataset metrics → diagnostics UI → analysis detail inspection`
+
+Diagnostics are derived at read time from the existing SQLite analysis records. No duplicate model run, diagnostic database, or generated metric file is introduced. Legacy rows without per-slot predictions remain visible but are explicitly excluded from slot-level calculations.
+
 ## Milestone 5 presentation flow
 
 `Preflight → deterministic showcase catalogue → three existing analysis requests → SQLite history → guided overlays → Analytics/Reports`

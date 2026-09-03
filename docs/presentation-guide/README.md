@@ -1,5 +1,9 @@
 # Presentation plan
 
+## AI diagnostics demonstration
+
+After completing the guided showcase, open `/diagnostics`. Explain the evaluated-slot coverage, confusion matrix, and dataset-level metrics. If the inspection queue contains an error, open it and switch between AI prediction and ground truth; yellow borders identify incorrect slots. If the queue is empty, explain that the current stored demo runs contain no disagreement and open any History row with **Inspect** to demonstrate the same auditable comparison.
+
 ## Guided presentation mode
 
 Open `/presentation`, verify the five green readiness checks, and start the guided showcase. The application analyses PKLot, CNRPark+EXT, and ACPDS in a fixed order. Use the dataset tabs to explain the green vacant and red occupied overlays, confidence, agreement, processing time, and saved analysis ID. Finish on Analytics to compare the three new runs, then Reports to show the detailed local JSON export.

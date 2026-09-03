@@ -62,3 +62,13 @@ def history(limit: int = Query(default=25, ge=1, le=200)) -> dict[str, object]:
         ).all()
     rows = [record_payload(record) for record in records]
     return {"count": len(rows), "analyses": rows}
+
+
+@router.get("/analysis/history/{analysis_id}")
+def history_detail(analysis_id: int) -> dict[str, object]:
+    with SessionLocal() as session:
+        record = session.get(AnalysisRecord, analysis_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Analysis record not found")
+        payload = record_payload(record, include_predictions=True)
+    return payload
