@@ -2,7 +2,7 @@
 
 An offline, dataset-driven smart-parking application. The product analyses preloaded parking-lot images and presents occupied and vacant spaces without cameras, sensors, live feeds, or cloud AI APIs.
 
-## Baseline ML validation correction status
+## Version 1.0 status
 
 The application now includes:
 
@@ -34,6 +34,8 @@ The application now includes:
 - Request IDs, safe API errors, response timing, and browser security headers
 - Frontend API timeouts, retry states, and a live local-system status indicator
 - Repeatable nine-route runtime smoke testing with optional persisted inference
+- Canonical Version 1.0 identity across the repository, backend, frontend, API, and UI
+- Machine-checkable final release contract and deterministic presentation handover runbook
 
 The application now distinguishes verified dataset ground truth from actual local AI predictions, persists model-quality fields, and turns saved runs into presentation analytics and reports. The lightweight model runs on CPU, requires no pretrained download, and remains fully offline. Full dataset extraction is still optional and is not required for the demo.
 
@@ -105,6 +107,16 @@ powershell -ExecutionPolicy Bypass -File '.\scripts\reliability-check.ps1'
 
 To include one real inference and persistence check against the current local database, add
 `-IncludeInference`. This intentionally creates one new analysis-history row.
+
+For final Version 1.0 handover, start both services and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File '.\scripts\release-check.ps1'
+```
+
+The default is read-only. Add `-IncludeInference` only when one final saved inference record is
+desired. See `docs\presentation-guide\README.md` for the five-minute demonstration sequence and
+recovery checklist.
 
 ## Dataset policy
 

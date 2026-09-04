@@ -6,6 +6,7 @@ from sqlalchemy import text
 from app.core.config import get_settings
 from app.db.session import engine
 from app.ml.model_store import model_status
+from app.release import APPLICATION_VERSION
 from app.services.reliability_service import collect_readiness
 
 router = APIRouter()
@@ -16,7 +17,7 @@ def liveness() -> dict[str, object]:
     return {
         "status": "alive",
         "timestamp": datetime.now(UTC).isoformat(),
-        "version": "0.7.0",
+        "version": APPLICATION_VERSION,
     }
 
 
@@ -42,6 +43,7 @@ def health() -> dict[str, object]:
 
     return {
         "status": "healthy" if database_status == "connected" else "degraded",
+        "version": APPLICATION_VERSION,
         "timestamp": datetime.now(UTC).isoformat(),
         "environment": settings.app_env,
         "database": database_status,

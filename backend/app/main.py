@@ -13,6 +13,7 @@ from app.core.http import (
     validation_exception_handler,
 )
 from app.db.session import initialize_database
+from app.release import APPLICATION_VERSION
 
 
 @asynccontextmanager
@@ -24,7 +25,7 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.7.0",
+    version=APPLICATION_VERSION,
     description="Offline dataset-driven smart-parking API",
     lifespan=lifespan,
 )
@@ -43,4 +44,9 @@ app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/", tags=["root"])
 def root() -> dict[str, str]:
-    return {"name": settings.app_name, "status": "running", "docs": "/docs"}
+    return {
+        "name": settings.app_name,
+        "version": APPLICATION_VERSION,
+        "status": "running",
+        "docs": "/docs",
+    }

@@ -5,8 +5,8 @@ export default function SystemPage() {
   return (
     <SectionPlaceholder
       eyebrow="Environment"
-      title="System readiness"
-      description="Run deep local checks across the database, datasets, demo catalogue, model, and independent benchmark before presenting."
+      title="Version 1.0 release status"
+      description="Confirm the final offline product contract and run deep checks across the database, datasets, catalogue, model, and independent benchmark."
     >
       <SystemStatus />
     </SectionPlaceholder>

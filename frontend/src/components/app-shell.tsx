@@ -60,6 +60,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <p className="mt-2 text-xs leading-5 text-slate-400">
             Dataset-driven analysis. No camera, sensor, or cloud AI connection.
           </p>
+          <p className="mt-3 border-t border-white/10 pt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            Version 1.0 · Final release
+          </p>
         </div>
       </aside>
 

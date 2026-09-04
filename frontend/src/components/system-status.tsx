@@ -12,18 +12,40 @@ type Readiness = {
   checks: Check[];
   summary: { passed: number; total: number };
 };
+type ReleaseManifest = {
+  version: string;
+  label: string;
+  stage: string;
+  mode: string;
+  datasets: string[];
+  model: {
+    name: string;
+    decision_threshold: number;
+    unseen_test_samples: number;
+    unseen_test_accuracy: number;
+  };
+  boundaries: { hardware: boolean; live_data: boolean; cloud_ai: boolean };
+};
 
 export function SystemStatus() {
   const [report, setReport] = useState<Readiness | null>(null);
+  const [release, setRelease] = useState<ReleaseManifest | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
-    apiFetch<Readiness>("/health/ready", { timeoutMs: 5_000, acceptedStatuses: [503] })
-      .then((payload) => {
+    Promise.all([
+      apiFetch<Readiness>("/health/ready", {
+        timeoutMs: 5_000,
+        acceptedStatuses: [503],
+      }),
+      apiFetch<ReleaseManifest>("/system/release", { timeoutMs: 5_000 }),
+    ])
+      .then(([readinessPayload, releasePayload]) => {
         if (active) {
-          setReport(payload);
+          setReport(readinessPayload);
+          setRelease(releasePayload);
           setError("");
         }
       })
@@ -43,10 +65,29 @@ export function SystemStatus() {
       </div>
     );
   }
-  if (!report) return <div className="rounded-2xl border border-slate-200 p-5 text-sm text-slate-500">Running deep readiness checks…</div>;
+  if (!report || !release) return <div className="rounded-2xl border border-slate-200 p-5 text-sm text-slate-500">Running release and readiness checks…</div>;
 
   return (
     <div className="space-y-5">
+      <div className="rounded-2xl bg-slate-900 p-5 text-white">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-400">Final product handover</p>
+            <p className="mt-1 text-2xl font-black">{release.label}</p>
+            <p className="mt-2 text-sm text-slate-300">
+              {release.mode} · {release.datasets.join(" · ")} · {release.model.name}
+            </p>
+          </div>
+          <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-xs font-black uppercase tracking-wider text-emerald-300">
+            {release.stage}
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-3">
+          <p className="text-xs text-slate-400"><span className="block font-black text-white">{release.model.unseen_test_samples.toLocaleString()}</span>Unseen test samples</p>
+          <p className="text-xs text-slate-400"><span className="block font-black text-white">{(release.model.unseen_test_accuracy * 100).toFixed(1)}%</span>Verified accuracy</p>
+          <p className="text-xs text-slate-400"><span className="block font-black text-white">{release.model.decision_threshold.toFixed(2)}</span>Decision threshold</p>
+        </div>
+      </div>
       <div className={report.ready ? "rounded-2xl border border-emerald-200 bg-emerald-50 p-5" : "rounded-2xl border border-amber-200 bg-amber-50 p-5"}>
         <p className={report.ready ? "font-black text-emerald-700" : "font-black text-amber-700"}>{report.ready ? "Presentation system ready" : "System needs attention"}</p>
         <p className="mt-1 text-xs text-slate-600">{report.summary.passed}/{report.summary.total} reliability checks passed · checked {new Date(report.timestamp).toLocaleTimeString()}</p>

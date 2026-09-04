@@ -38,6 +38,8 @@ try {
     Assert-CommandSucceeded 'offline presentation preflight'
     & $backendPython -m app.cli.verify_reliability
     Assert-CommandSucceeded 'deep application readiness'
+    & $backendPython -m app.cli.verify_release
+    Assert-CommandSucceeded 'Version 1.0 release contract'
 }
 finally {
     Pop-Location
@@ -57,4 +59,4 @@ finally {
     Pop-Location
 }
 
-Write-Host 'All Milestone 7 hardening checks passed.' -ForegroundColor Green
+Write-Host 'All Version 1.0 release checks passed.' -ForegroundColor Green

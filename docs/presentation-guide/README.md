@@ -1,30 +1,66 @@
-# Presentation plan
+# Version 1.0 presentation runbook
 
-## AI diagnostics demonstration
+This is the definitive final demonstration path. Every input is already stored locally. Do not
+connect a camera, upload a new image, retrain the model, or depend on internet access during the
+presentation.
 
-After completing the guided showcase, open `/diagnostics`. Explain the evaluated-slot coverage, confusion matrix, and dataset-level metrics. If the inspection queue contains an error, open it and switch between AI prediction and ground truth; yellow borders identify incorrect slots. If the queue is empty, explain that the current stored demo runs contain no disagreement and open any History row with **Inspect** to demonstrate the same auditable comparison.
+## Before presentation day
 
-## Guided presentation mode
+1. Run `scripts\verify.ps1` and retain the successful terminal output.
+2. Start both services and run `scripts\release-check.ps1 -IncludeInference` once.
+3. Confirm the System page shows **Version 1.0**, **final**, and 7/7 readiness checks.
+4. Confirm Presentation shows five green checks and three showcase scenarios.
+5. Keep the laptop connected to power and disable disruptive notifications and sleep.
 
-Open `/presentation`, verify the five green readiness checks, and start the guided showcase. The application analyses PKLot, CNRPark+EXT, and ACPDS in a fixed order. Use the dataset tabs to explain the green vacant and red occupied overlays, confidence, agreement, processing time, and saved analysis ID. Finish on Analytics to compare the three new runs, then Reports to show the detailed local JSON export.
+## Fifteen-minute preflight
 
-## Milestone 4 demonstration
+Open two PowerShell terminals in the repository root:
 
-Before presenting, run `scripts\verify.ps1` and confirm the model is ready on the System page. Analyse one scenario from each configured dataset so the Analytics comparison has representative rows. The recommended live sequence is Dashboard, Analyse, Analytics, History, then Reports. Download an individual JSON report to show that each visible parking slot has a saved prediction, confidence, and ground-truth comparison.
+```powershell
+powershell -ExecutionPolicy Bypass -File '.\scripts\start-backend.ps1'
+```
 
-All demonstration inputs are already prepared locally. No camera, sensor, cloud AI service, or internet connection is used.
+```powershell
+powershell -ExecutionPolicy Bypass -File '.\scripts\start-frontend.ps1'
+```
 
-The final demonstration is designed to remain reliable without internet access.
+Then run the read-only handover check in a third terminal:
 
-1. Start the backend and frontend.
-2. Open System and confirm database, dataset catalogue, and local model readiness.
-3. Open Analyse.
-4. Select PKLot, CNRPark+EXT, or ACPDS.
-5. Select a prepared lot, condition, and scenario.
-6. Show the verified dataset ground-truth overlay.
-7. Click **Run local AI analysis**.
-8. Explain green vacant and red occupied predictions, confidence, processing time, and ground-truth agreement.
-9. Switch between Ground truth and AI prediction to demonstrate the comparison.
-10. Open History and show the newly stored SQLite analysis record.
+```powershell
+powershell -ExecutionPolicy Bypass -File '.\scripts\release-check.ps1'
+```
 
-Prepare the curated catalogue before the presentation. No user upload, internet connection, live feed, camera, or hardware is required.
+Open <http://localhost:3000/presentation>. Keep
+<http://localhost:3000/system> open in a second browser tab.
+
+## Five-minute talk track
+
+| Time | Screen | Demonstration |
+| --- | --- | --- |
+| 0:00–0:35 | System | Identify Version 1.0, offline mode, 7/7 readiness, and the local model. |
+| 0:35–2:40 | Presentation | Start the guided showcase. Analyse PKLot, CNRPark+EXT, and ACPDS in the fixed order. Explain red occupied and green vacant slots, totals, confidence, and processing time. |
+| 2:40–3:25 | Presentation results | Switch dataset tabs and compare AI predictions with verified ground truth. Emphasize that each run is saved locally. |
+| 3:25–4:10 | Diagnostics | Show the independent 1,800-sample unseen-test result separately from stored-run agreement. Explain the confusion matrix and dataset breakdown. |
+| 4:10–4:40 | History / Analytics | Open a newly saved run and show the detailed overlay, then show aggregate local usage. |
+| 4:40–5:00 | Reports | Download or open a JSON/CSV report and close with the no-hardware, no-live-data, no-cloud-AI boundary. |
+
+## Key statements
+
+- “The product uses preloaded images from PKLot, CNRPark+EXT, and ACPDS.”
+- “The model runs locally and classifies each predefined parking space.”
+- “Green is vacant and red is occupied; the counters are derived from these slot predictions.”
+- “The verified unseen-test accuracy is 90.7% on 1,800 balanced, independent samples.”
+- “Saved-run agreement is operational evidence, not a replacement for the independent benchmark.”
+
+## Recovery during the presentation
+
+| Symptom | Safe response |
+| --- | --- |
+| Header says backend offline | Restart `scripts\start-backend.ps1`, wait for `/health/live`, then press Retry. |
+| Readiness shows attention | Open System, read the failed check, and restore that local dependency. Do not retrain. |
+| Frontend page does not load | Restart `scripts\start-frontend.ps1` and refresh; backend history remains intact. |
+| One inference fails | Keep the prepared result tabs visible, restart the backend, and retry the scenario once. |
+| Internet is unavailable | Continue normally; Version 1.0 requires no network connection. |
+
+Do not delete the SQLite database, dataset root, benchmark cache, or model artifacts as a recovery
+step. Do not run training or dataset preparation immediately before or during the presentation.
