@@ -52,13 +52,15 @@ def test_collect_readiness_requires_every_local_dependency(tmp_path, monkeypatch
             "ready": True,
             "model_name": "parking-occupancy-logistic-v2",
             "independent_benchmark": {"unseen_test": {"unique_samples": 1800}},
+            "enhanced_occupancy": {"ready": True, "model_name": "enhanced"},
+            "slot_localizer": {"ready": True, "model_name": "localizer"},
         },
     )
 
     report = collect_readiness(tmp_path, tmp_path / "models", create_engine("sqlite://"))
 
     assert report["ready"] is True
-    assert report["summary"] == {"passed": 7, "total": 7}
+    assert report["summary"] == {"passed": 9, "total": 9}
     assert report["boundaries"] == {"hardware": False, "live_data": False, "cloud_ai": False}
 
 

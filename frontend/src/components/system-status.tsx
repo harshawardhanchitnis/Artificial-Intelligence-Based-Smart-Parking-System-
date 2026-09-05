@@ -12,24 +12,17 @@ type Readiness = {
   checks: Check[];
   summary: { passed: number; total: number };
 };
-type ReleaseManifest = {
-  version: string;
-  label: string;
-  stage: string;
-  mode: string;
-  datasets: string[];
-  model: {
-    name: string;
-    decision_threshold: number;
-    unseen_test_samples: number;
-    unseen_test_accuracy: number;
-  };
-  boundaries: { hardware: boolean; live_data: boolean; cloud_ai: boolean };
+type ModelPart = { ready: boolean; model_name: string; architecture?: string; reason?: string };
+type ModelStatus = {
+  active_model: ModelPart;
+  enhanced_occupancy: ModelPart;
+  automatic_localizer: ModelPart;
+  reproducible_baseline: ModelPart;
 };
 
 export function SystemStatus() {
   const [report, setReport] = useState<Readiness | null>(null);
-  const [release, setRelease] = useState<ReleaseManifest | null>(null);
+  const [models, setModels] = useState<ModelStatus | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
 
@@ -40,12 +33,12 @@ export function SystemStatus() {
         timeoutMs: 5_000,
         acceptedStatuses: [503],
       }),
-      apiFetch<ReleaseManifest>("/system/release", { timeoutMs: 5_000 }),
+      apiFetch<ModelStatus>("/model/status", { timeoutMs: 5_000 }),
     ])
-      .then(([readinessPayload, releasePayload]) => {
+      .then(([readinessPayload, modelPayload]) => {
         if (active) {
           setReport(readinessPayload);
-          setRelease(releasePayload);
+          setModels(modelPayload);
           setError("");
         }
       })
@@ -61,31 +54,31 @@ export function SystemStatus() {
     return (
       <div className="rounded-2xl border border-red-200 bg-red-50 p-5" role="alert">
         <p className="text-sm font-semibold text-red-700">{error}</p>
-        <button onClick={() => setAttempt((value) => value + 1)} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-xs font-bold text-white">Retry checks</button>
+        <button onClick={() => setAttempt((value) => value + 1)} className="mt-3 min-h-11 rounded-lg bg-slate-900 px-4 py-2 text-xs font-bold text-white focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2">Retry checks</button>
       </div>
     );
   }
-  if (!report || !release) return <div className="rounded-2xl border border-slate-200 p-5 text-sm text-slate-500">Running release and readiness checks…</div>;
+  if (!report || !models) return <div className="rounded-2xl border border-slate-200 p-5 text-sm text-slate-500">Running system and readiness checks…</div>;
 
   return (
     <div className="space-y-5">
       <div className="rounded-2xl bg-slate-900 p-5 text-white">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-400">Final product handover</p>
-            <p className="mt-1 text-2xl font-black">{release.label}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-300">Vision system</p>
+            <p className="mt-1 text-2xl font-black">AI model readiness</p>
             <p className="mt-2 text-sm text-slate-300">
-              {release.mode} · {release.datasets.join(" · ")} · {release.model.name}
+              Active occupancy model: {models.active_model.model_name}
             </p>
           </div>
           <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-xs font-black uppercase tracking-wider text-emerald-300">
-            {release.stage}
+            {report.ready ? "Ready" : "Attention"}
           </span>
         </div>
         <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-3">
-          <p className="text-xs text-slate-400"><span className="block font-black text-white">{release.model.unseen_test_samples.toLocaleString()}</span>Unseen test samples</p>
-          <p className="text-xs text-slate-400"><span className="block font-black text-white">{(release.model.unseen_test_accuracy * 100).toFixed(1)}%</span>Verified accuracy</p>
-          <p className="text-xs text-slate-400"><span className="block font-black text-white">{release.model.decision_threshold.toFixed(2)}</span>Decision threshold</p>
+          <p className="text-xs text-slate-400"><span className="block font-black text-white">{models.enhanced_occupancy.ready ? "Ready" : "Not installed"}</span>Enhanced occupancy</p>
+          <p className="text-xs text-slate-400"><span className="block font-black text-white">{models.automatic_localizer.ready ? "Ready" : "Not installed"}</span>Automatic space detection</p>
+          <p className="text-xs text-slate-400"><span className="block font-black text-white">{models.reproducible_baseline.ready ? "Available" : "Unavailable"}</span>Reproducible baseline</p>
         </div>
       </div>
       <div className={report.ready ? "rounded-2xl border border-emerald-200 bg-emerald-50 p-5" : "rounded-2xl border border-amber-200 bg-amber-50 p-5"}>
@@ -100,7 +93,7 @@ export function SystemStatus() {
           </div>
         ))}
       </div>
-      <button onClick={() => setAttempt((value) => value + 1)} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700">Run checks again</button>
+      <button onClick={() => setAttempt((value) => value + 1)} className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-800 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2">Run checks again</button>
     </div>
   );
 }

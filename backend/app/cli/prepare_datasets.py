@@ -21,7 +21,13 @@ def parser() -> argparse.ArgumentParser:
     subcommands = command.add_subparsers(dest="profile", required=True)
     subcommands.add_parser("plan", help="Inspect files and disk requirements")
     demo = subcommands.add_parser("demo", help="Build the lightweight demo catalogue")
-    demo.add_argument("--samples-per-dataset", type=int, default=3)
+    demo.add_argument("--samples-per-dataset", type=int, default=10)
+    demo.add_argument(
+        "--output-root",
+        type=Path,
+        default=None,
+        help="Optional artifact root; source archives remain under --data-root",
+    )
     demo.add_argument("--force", action="store_true")
     benchmark = subcommands.add_parser(
         "benchmark", help="Build leakage-safe ML train/validation/test patches"
@@ -46,6 +52,7 @@ def main() -> int:
         elif arguments.profile == "demo":
             result = prepare_demo(
                 data_root,
+                output_root=arguments.output_root,
                 samples_per_dataset=arguments.samples_per_dataset,
                 force=arguments.force,
             )

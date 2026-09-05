@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/app-shell";
+import { PRODUCT_NAME } from "@/lib/product";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ParkSense AI",
-  description: "Offline artificial-intelligence based smart parking system",
+  title: PRODUCT_NAME,
+  description: "Automatic parking-space localisation, occupancy analysis, and operational insight.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

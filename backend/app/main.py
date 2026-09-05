@@ -14,11 +14,13 @@ from app.core.http import (
 )
 from app.db.session import initialize_database
 from app.release import APPLICATION_VERSION
+from app.services.video_service import recover_interrupted_jobs
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     initialize_database()
+    recover_interrupted_jobs()
     yield
 
 
@@ -26,7 +28,7 @@ settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
     version=APPLICATION_VERSION,
-    description="Offline dataset-driven smart-parking API",
+    description="Local image and video parking-occupancy analysis API",
     lifespan=lifespan,
 )
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)

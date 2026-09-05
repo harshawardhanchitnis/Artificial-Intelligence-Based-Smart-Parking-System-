@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from PIL import Image, ImageDraw
 
 from app.datasets.preparation import (
     PreparationError,
@@ -18,9 +19,15 @@ from app.datasets.preparation import (
 from app.services.catalogue_service import CatalogueRepository
 
 
-def jpeg(width: int = 100, height: int = 80) -> bytes:
-    frame = b"\x08" + height.to_bytes(2, "big") + width.to_bytes(2, "big")
-    return b"\xff\xd8\xff\xc0\x00\x07" + frame + b"\xff\xd9"
+def jpeg(width: int = 100, height: int = 80, color: str = "white") -> bytes:
+    stream = io.BytesIO()
+    image = Image.new("RGB", (width, height), "white")
+    if color == "blue":
+        ImageDraw.Draw(image).rectangle((5, 5, 35, 70), fill="blue")
+    elif color == "red":
+        ImageDraw.Draw(image).polygon(((50, 5), (95, 40), (50, 75)), fill="red")
+    image.save(stream, "JPEG")
+    return stream.getvalue()
 
 
 def add_tar_bytes(archive: tarfile.TarFile, name: str, payload: bytes) -> None:
@@ -50,7 +57,9 @@ def build_archives(data_root: Path) -> None:
             archive, "FULL_IMAGE_1000x750/camera1.csv", b"SlotId,X,Y,W,H\n1,100,100,200,300\n"
         )
         add_tar_bytes(
-            archive, "FULL_IMAGE_1000x750/SUNNY/2015-11-12/camera1/2015-11-12_0709.jpg", jpeg()
+            archive,
+            "FULL_IMAGE_1000x750/SUNNY/2015-11-12/camera1/2015-11-12_0709.jpg",
+            jpeg(color="blue"),
         )
     with (cnr_root / "CNRPark+EXT.csv").open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=["camera", "datetime", "occupancy", "slot_id"])
@@ -75,7 +84,7 @@ def build_archives(data_root: Path) -> None:
     }
     with zipfile.ZipFile(acpds, "w") as archive:
         archive.writestr("annotations.json", json.dumps(annotations))
-        archive.writestr("images/sample.JPG", jpeg())
+        archive.writestr("images/sample.JPG", jpeg(color="red"))
 
 
 def test_demo_preparation_builds_verified_catalogue(tmp_path: Path) -> None:

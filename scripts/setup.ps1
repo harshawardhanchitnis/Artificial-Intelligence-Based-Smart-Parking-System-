@@ -12,7 +12,7 @@ function Assert-CommandSucceeded([string]$step) {
     }
 }
 
-Write-Host 'Preparing Smart Parking Version 1.0...' -ForegroundColor Cyan
+Write-Host 'Preparing Artificial Intelligence Based Smart Parking System...' -ForegroundColor Cyan
 
 if (-not (Test-Path -LiteralPath (Join-Path $repoRoot '.env'))) {
     Copy-Item -LiteralPath (Join-Path $repoRoot '.env.example') -Destination (Join-Path $repoRoot '.env')
@@ -61,5 +61,5 @@ finally {
 }
 
 Write-Host ''
-Write-Host 'Smart Parking Version 1.0 setup completed successfully.' -ForegroundColor Green
+Write-Host 'Smart Parking setup completed successfully.' -ForegroundColor Green
 Write-Host 'Use scripts\start-backend.ps1 and scripts\start-frontend.ps1 in two terminals.'

@@ -9,7 +9,9 @@ from app.core.config import get_settings
 from app.db.models import AnalysisRecord
 from app.db.session import SessionLocal
 from app.ml.inference import analyse_scenario
+from app.ml.localization import localizer_status
 from app.ml.model_store import ModelNotReadyError, model_status
+from app.ml.occupancy_v3 import occupancy_v3_status
 from app.services.analytics_service import record_payload
 from app.services.catalogue_service import ScenarioNotFoundError
 
@@ -19,7 +21,18 @@ router = APIRouter()
 @router.get("/model/status")
 def status() -> dict[str, object]:
     settings = get_settings()
-    return model_status(settings.model_root)
+    model_bundle = model_status(settings.model_root)
+    baseline = model_bundle["baseline"]
+    enhanced = occupancy_v3_status(settings.model_root)
+    active = enhanced if enhanced["ready"] else baseline
+    return {
+        **active,
+        "ready": bool(enhanced["ready"] or baseline["ready"]),
+        "active_model": enhanced if enhanced["ready"] else baseline,
+        "enhanced_occupancy": enhanced,
+        "automatic_localizer": localizer_status(settings.model_root),
+        "reproducible_baseline": baseline,
+    }
 
 
 @router.post("/analysis/scenarios/{scenario_id}")

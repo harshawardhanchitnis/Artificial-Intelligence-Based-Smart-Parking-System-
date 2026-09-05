@@ -96,8 +96,7 @@ def validate_release_state(
         },
         {
             "key": "dataset_contract",
-            "ready": sorted(str(item) for item in observed_datasets)
-            == sorted(REQUIRED_DATASETS),
+            "ready": sorted(str(item) for item in observed_datasets) == sorted(REQUIRED_DATASETS),
             "detail": observed_datasets,
         },
         {

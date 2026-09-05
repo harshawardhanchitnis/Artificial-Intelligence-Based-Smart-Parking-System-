@@ -7,7 +7,9 @@ import numpy as np
 from PIL import Image
 
 from app.ml.features import scenario_features
+from app.ml.geometry import rectify_slot
 from app.ml.model_store import load_model
+from app.ml.occupancy_v3 import OccupancyV3NotReadyError, OccupancyV3Predictor
 from app.services.catalogue_service import CatalogueRepository
 
 
@@ -18,13 +20,28 @@ def analyse_scenario(data_root: Path, model_root: Path, scenario_id: str) -> dic
     slots = scenario.get("slots")
     if not isinstance(slots, list) or not slots:
         raise ValueError("Scenario contains no parking spaces")
-    artifact = load_model(model_root)
     with Image.open(repository.image_path(scenario_id)) as image:
-        features = scenario_features(image.convert("RGB"), slots).astype(np.float64)
-    normalized = (features - artifact.feature_mean) / artifact.feature_scale
-    logits = np.clip(normalized @ artifact.coefficient + artifact.intercept, -40, 40)
-    occupied_probabilities = 1.0 / (1.0 + np.exp(-logits))
-    predicted_states = occupied_probabilities >= artifact.threshold
+        rgb = image.convert("RGB")
+        try:
+            enhanced = OccupancyV3Predictor.load(model_root)
+            occupied_probabilities, _ = enhanced.probabilities(
+                [rectify_slot(rgb, slot["polygon"]) for slot in slots]
+            )
+            threshold = enhanced.threshold
+            model_name = str(enhanced.metadata["model_name"])
+            feature_version = str(enhanced.metadata["preprocessing"])
+            trained_at = enhanced.metadata.get("trained_at")
+        except OccupancyV3NotReadyError:
+            artifact = load_model(model_root)
+            features = scenario_features(rgb, slots).astype(np.float64)
+            normalized = (features - artifact.feature_mean) / artifact.feature_scale
+            logits = np.clip(normalized @ artifact.coefficient + artifact.intercept, -40, 40)
+            occupied_probabilities = 1.0 / (1.0 + np.exp(-logits))
+            threshold = artifact.threshold
+            model_name = str(artifact.metadata["model_name"])
+            feature_version = str(artifact.metadata["feature_version"])
+            trained_at = artifact.metadata.get("trained_at")
+    predicted_states = occupied_probabilities >= threshold
     predictions = []
     agreements = 0
     for slot, probability, predicted in zip(
@@ -33,12 +50,7 @@ def analyse_scenario(data_root: Path, model_root: Path, scenario_id: str) -> dic
         truth = bool(slot["occupied"])
         prediction = bool(predicted)
         agreements += int(truth == prediction)
-        confidence = (
-            0.5
-            + 0.5 * (float(probability) - artifact.threshold) / (1.0 - artifact.threshold)
-            if prediction
-            else 0.5 + 0.5 * (artifact.threshold - float(probability)) / artifact.threshold
-        )
+        confidence = max(float(probability), 1.0 - float(probability))
         predictions.append(
             {
                 "id": str(slot["id"]),
@@ -58,10 +70,10 @@ def analyse_scenario(data_root: Path, model_root: Path, scenario_id: str) -> dic
         "dataset": scenario["dataset"],
         "lot": scenario["lot"],
         "condition": scenario["condition"],
-        "model_name": artifact.metadata["model_name"],
-        "feature_version": artifact.metadata["feature_version"],
-        "trained_at": artifact.metadata.get("trained_at"),
-        "decision_threshold": artifact.threshold,
+        "model_name": model_name,
+        "feature_version": feature_version,
+        "trained_at": trained_at,
+        "decision_threshold": threshold,
         "total_spaces": total,
         "occupied_spaces": occupied,
         "vacant_spaces": total - occupied,

@@ -106,6 +106,37 @@ def collect_readiness(data_root: Path, model_root: Path, engine: Engine) -> dict
             str(model.get("model_name") if model_ready else model.get("reason", "Not ready")),
         )
     )
+    enhanced = model.get("enhanced_occupancy", {})
+    localizer = model.get("slot_localizer", {})
+    checks.append(
+        _check(
+            "automatic_image_ai",
+            "Automatic image analysis models",
+            bool(enhanced.get("ready")) and bool(localizer.get("ready")),
+            (
+                f"{enhanced.get('model_name')} + {localizer.get('model_name')}"
+                if enhanced.get("ready") and localizer.get("ready")
+                else "Enhanced occupancy and slot-localisation models are not both installed"
+            ),
+        )
+    )
+    media_root = data_root / "media"
+    try:
+        media_root.mkdir(parents=True, exist_ok=True)
+        probe = media_root / ".readiness-probe"
+        probe.write_bytes(b"ready")
+        probe.unlink()
+        media_ready = True
+    except OSError:
+        media_ready = False
+    checks.append(
+        _check(
+            "media_storage",
+            "Media processing storage",
+            media_ready,
+            str(media_root) if media_ready else "Storage is not writable",
+        )
+    )
     benchmark = model.get("independent_benchmark")
     unseen = benchmark.get("unseen_test") if isinstance(benchmark, dict) else None
     test_samples = unseen.get("unique_samples") if isinstance(unseen, dict) else None

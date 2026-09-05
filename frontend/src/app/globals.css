@@ -13,52 +13,95 @@
   --red: #dc2626;
 }
 
-* {
-  box-sizing: border-box;
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    background: var(--background);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      "Segoe UI", sans-serif;
+  }
+
+  button,
+  select,
+  input {
+    font: inherit;
+  }
+
+  button,
+  [role="button"] {
+    min-height: 44px;
+  }
+
+  a[class*="rounded"] {
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  button:disabled,
+  input:disabled,
+  select:disabled {
+    opacity: 1;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  :focus-visible {
+    outline: 3px solid #f59e0b;
+    outline-offset: 3px;
+  }
 }
 
-html {
-  background: var(--background);
+@layer components {
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: var(--panel);
+    box-shadow: 0 8px 30px rgb(15 23 42 / 5%);
+  }
+
+  .label {
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .skip-link {
+    position: fixed;
+    left: 1rem;
+    top: -5rem;
+    z-index: 100;
+    border-radius: 0.75rem;
+    background: white;
+    color: #0f172a;
+    padding: 0.75rem 1rem;
+    font-weight: 800;
+  }
+
+  .skip-link:focus {
+    top: 1rem;
+  }
 }
 
-body {
-  margin: 0;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-}
-
-button,
-select {
-  font: inherit;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.card {
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--panel);
-  box-shadow: 0 8px 30px rgb(15 23 42 / 5%);
-}
-
-.label {
-  color: var(--muted);
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-@media (max-width: 900px) {
+@media (max-width: 767px) {
   .app-sidebar {
     display: none;
   }
-
   .app-main {
     margin-left: 0 !important;
   }

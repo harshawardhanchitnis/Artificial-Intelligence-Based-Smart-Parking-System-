@@ -5,78 +5,68 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { ConnectionStatus } from "@/components/connection-status";
-
-const navigation = [
-  { href: "/", label: "Dashboard", symbol: "▦" },
-  { href: "/presentation", label: "Presentation", symbol: "▶" },
-  { href: "/analyse", label: "Analyse", symbol: "◎" },
-  { href: "/parking-lots", label: "Parking lots", symbol: "P" },
-  { href: "/history", label: "History", symbol: "↺" },
-  { href: "/analytics", label: "Analytics", symbol: "⌁" },
-  { href: "/diagnostics", label: "AI diagnostics", symbol: "◇" },
-  { href: "/reports", label: "Reports", symbol: "▤" },
-  { href: "/system", label: "System", symbol: "⚙" },
-];
+import { navigation, PRODUCT_NAME } from "@/lib/product";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  if (pathname === "/") return <>{children}</>;
 
   return (
     <div className="min-h-screen bg-[#f4f7fb]">
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <aside className="app-sidebar fixed inset-y-0 left-0 z-20 flex w-64 flex-col bg-[#111a2e] px-4 py-6 text-white">
         <div className="mb-8 flex items-center gap-3 px-2">
-          <div className="grid h-11 w-11 place-items-center rounded-xl bg-amber-500 text-lg font-black text-slate-950">
-            P
-          </div>
-          <div>
-            <p className="text-sm font-extrabold tracking-wide">PARKSENSE AI</p>
-            <p className="text-xs text-slate-400">Offline parking intelligence</p>
-          </div>
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-400 text-lg font-black text-slate-950">P</div>
+          <p className="text-sm font-extrabold leading-5">{PRODUCT_NAME}</p>
         </div>
-
-        <nav className="space-y-1">
+        <nav className="space-y-1" aria-label="Primary navigation">
           {navigation.map((item) => {
-            const active =
-              item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={
-                  active
-                    ? "flex items-center gap-3 rounded-xl bg-white/10 px-3 py-3 text-sm font-semibold text-white"
-                    : "flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white"
-                }
+                aria-current={active ? "page" : undefined}
+                className={active
+                  ? "flex min-h-11 items-center gap-3 rounded-xl bg-white/15 px-3 py-3 text-sm font-semibold text-white"
+                  : "flex min-h-11 items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"}
               >
-                <span className={active ? "text-amber-400" : ""}>{item.symbol}</span>
+                <span aria-hidden="true" className={active ? "text-amber-300" : ""}>{item.symbol}</span>
                 {item.label}
               </Link>
             );
           })}
         </nav>
-
         <div className="mt-auto rounded-2xl border border-white/10 bg-white/5 p-4">
-          <p className="text-xs font-bold text-emerald-400">● OFFLINE MODE</p>
-          <p className="mt-2 text-xs leading-5 text-slate-400">
-            Dataset-driven analysis. No camera, sensor, or cloud AI connection.
-          </p>
-          <p className="mt-3 border-t border-white/10 pt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Version 1.0 · Final release
-          </p>
+          <p className="text-xs font-bold text-emerald-300">● PROCESSING READY</p>
+          <p className="mt-2 text-xs leading-5 text-slate-300">Your images, video results, and analysis history stay on this computer.</p>
         </div>
       </aside>
 
       <main className="app-main min-h-screen md:ml-64">
-        <header className="flex min-h-20 items-center justify-between border-b border-slate-200 bg-white px-6 lg:px-10">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-              Artificial Intelligence Based
-            </p>
-            <p className="font-bold text-slate-800">Smart Parking System</p>
+        <header className="border-b border-slate-200 bg-white px-4 py-4 lg:px-10">
+          <div className="flex min-h-12 items-center justify-between gap-4">
+            <p className="max-w-[75%] text-sm font-extrabold leading-5 text-slate-900 sm:max-w-none sm:text-base">{PRODUCT_NAME}</p>
+            <ConnectionStatus />
           </div>
-          <ConnectionStatus />
+          <details key={pathname} className="group mt-3 md:hidden">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-900 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-slate-700">
+              Menu
+              <span aria-hidden="true" className="transition group-open:rotate-180">⌄</span>
+            </summary>
+            <nav className="mt-2 grid gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg sm:grid-cols-2" aria-label="Mobile navigation">
+              {navigation.map((item) => {
+                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
+                  <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`flex min-h-11 items-center rounded-lg px-3 py-2.5 text-sm font-bold focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-slate-700 ${active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-800 hover:bg-slate-200"}`}>
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </details>
         </header>
-        <div className="p-6 lg:p-10">{children}</div>
+        <div id="main-content" className="p-4 sm:p-6 lg:p-10">{children}</div>
       </main>
     </div>
   );

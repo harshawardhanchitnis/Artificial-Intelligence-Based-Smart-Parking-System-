@@ -2,7 +2,7 @@ param(
     [ValidateSet('Plan', 'Demo', 'Benchmark', 'Full')]
     [string]$Profile = 'Demo',
     [ValidateRange(1, 30)]
-    [int]$SamplesPerDataset = 3,
+    [int]$SamplesPerDataset = 10,
     [ValidateRange(50, 10000)]
     [int]$TrainPerClass = 1000,
     [ValidateRange(50, 5000)]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
 import os
@@ -17,10 +18,14 @@ from pathlib import Path, PurePosixPath
 from typing import BinaryIO
 from xml.etree import ElementTree
 
+import imagehash
+from PIL import Image
+
 from app.datasets.archive_validator import validate_archive_catalogue
+from app.ml.geometry import order_polygon, validate_polygon
 
 ProgressCallback = Callable[[str], None]
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "2.0"
 PKLOT_ARCHIVE = Path("archives/PKLot/PKLot.tar.gz")
 CNR_FULL_ARCHIVE = Path("archives/CNRPark+EXT/CNR-EXT_FULL_IMAGE_1000x750.tar")
 CNR_EXT_PATCHES = Path("archives/CNRPark+EXT/CNR-EXT-Patches-150x150.zip")
@@ -223,6 +228,14 @@ def _clamp(value: float) -> float:
     return round(min(1.0, max(0.0, value)), 6)
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _scenario(
     *,
     scenario_id: str,
@@ -236,8 +249,26 @@ def _scenario(
     height: int,
     slots: list[dict[str, object]],
 ) -> dict[str, object]:
+    normalized_slots = []
+    for slot in slots:
+        polygon = order_polygon(slot["polygon"])
+        quality = validate_polygon(polygon)
+        if not quality.valid:
+            raise PreparationError(
+                f"Invalid geometry in {scenario_id} slot {slot['id']}: {quality.reason}"
+            )
+        normalized_slots.append(
+            {
+                **slot,
+                "polygon": [[round(x, 6), round(y, 6)] for x, y in polygon],
+                "geometry_area": round(quality.area, 8),
+            }
+        )
+    slots = normalized_slots
     occupied = sum(bool(slot["occupied"]) for slot in slots)
     total = len(slots)
+    with Image.open(image_path) as image:
+        perceptual_hash = str(imagehash.phash(image.convert("RGB")))
     return {
         "schema_version": SCHEMA_VERSION,
         "id": scenario_id,
@@ -252,6 +283,10 @@ def _scenario(
         "occupied_spaces": occupied,
         "vacant_spaces": total - occupied,
         "annotation_source": "dataset_ground_truth",
+        "source_sha256": _sha256_file(image_path),
+        "perceptual_hash": perceptual_hash,
+        "evaluation_role": "exposed_scenario_regression",
+        "geometry_qc": "passed",
         "slots": slots,
     }
 
@@ -283,16 +318,65 @@ def _parse_pklot_xml(xml_path: Path, width: int, height: int) -> list[dict[str, 
     return slots
 
 
+def _diverse_scenario_subset(
+    scenarios: list[dict[str, object]], sample_count: int
+) -> list[dict[str, object]]:
+    """Cover conditions and locations before balancing remaining selections."""
+
+    ordered = sorted(scenarios, key=lambda row: str(row["id"]))
+    selected: list[dict[str, object]] = []
+    selected_ids: set[str] = set()
+    used_lots: set[str] = set()
+
+    def choose(row: dict[str, object]) -> None:
+        selected.append(row)
+        selected_ids.add(str(row["id"]))
+        used_lots.add(str(row["lot"]))
+
+    for condition in sorted({str(row["condition"]) for row in ordered}):
+        candidates = [row for row in ordered if str(row["condition"]) == condition]
+        choose(min(candidates, key=lambda row: (str(row["lot"]) in used_lots, str(row["id"]))))
+        if len(selected) == sample_count:
+            return selected
+    for lot in sorted({str(row["lot"]) for row in ordered}):
+        if lot in used_lots:
+            continue
+        choose(next(row for row in ordered if str(row["lot"]) == lot))
+        if len(selected) == sample_count:
+            return selected
+    while len(selected) < sample_count:
+        remaining = [row for row in ordered if str(row["id"]) not in selected_ids]
+        if not remaining:
+            break
+        lot_counts = {lot: sum(str(row["lot"]) == lot for row in selected) for lot in used_lots}
+        condition_counts = {
+            condition: sum(str(row["condition"]) == condition for row in selected)
+            for condition in {str(row["condition"]) for row in ordered}
+        }
+        choose(
+            min(
+                remaining,
+                key=lambda row: (
+                    lot_counts.get(str(row["lot"]), 0),
+                    condition_counts[str(row["condition"])],
+                    str(row["id"]),
+                ),
+            )
+        )
+    return selected
+
+
 def _prepare_pklot_demo(
-    data_root: Path,
+    source_root: Path,
+    output_root: Path,
     sample_count: int,
     *,
     force: bool,
     progress: ProgressCallback | None,
 ) -> list[dict[str, object]]:
-    archive_path = data_root / PKLOT_ARCHIVE
-    media_root = data_root / "demo" / "media" / "pklot"
-    metadata_root = data_root / "demo" / "metadata" / "pklot"
+    archive_path = source_root / PKLOT_ARCHIVE
+    media_root = output_root / "demo" / "media" / "pklot"
+    metadata_root = output_root / "demo" / "metadata" / "pklot"
     selected: dict[tuple[str, str, str], dict[str, object]] = {}
     group_counts: dict[tuple[str, str], int] = defaultdict(int)
     group_limit = max(1, math.ceil(sample_count / 9))
@@ -313,7 +397,7 @@ def _prepare_pklot_demo(
             key = (lot, weather, stem)
             group = (lot, weather)
             if key not in selected:
-                if len(selected) >= sample_count or group_counts[group] >= group_limit:
+                if group_counts[group] >= group_limit:
                     continue
                 scenario_id = f"pklot-{_slug(lot)}-{_slug(weather)}-{_slug(stem)}"
                 selected[key] = {"id": scenario_id, "lot": lot, "condition": weather}
@@ -353,12 +437,13 @@ def _prepare_pklot_demo(
                     condition=str(record["condition"]),
                     split=None,
                     image_path=image_path,
-                    data_root=data_root,
+                    data_root=output_root,
                     width=width,
                     height=height,
                     slots=slots,
                 )
             )
+    scenarios = _diverse_scenario_subset(scenarios, sample_count)
     _emit(progress, f"PKLot: prepared {len(scenarios)} scenarios")
     return scenarios
 
@@ -385,15 +470,16 @@ def _cnr_datetime_to_stem(value: str) -> str:
 
 
 def _prepare_cnr_demo(
-    data_root: Path,
+    source_root: Path,
+    output_root: Path,
     sample_count: int,
     *,
     force: bool,
     progress: ProgressCallback | None,
 ) -> list[dict[str, object]]:
-    archive_path = data_root / CNR_FULL_ARCHIVE
-    media_root = data_root / "demo" / "media" / "cnrpark-ext"
-    metadata_root = data_root / "demo" / "metadata" / "cnrpark-ext"
+    archive_path = source_root / CNR_FULL_ARCHIVE
+    media_root = output_root / "demo" / "media" / "cnrpark-ext"
+    metadata_root = output_root / "demo" / "metadata" / "cnrpark-ext"
     selected: dict[tuple[str, str], dict[str, object]] = {}
     group_counts: dict[tuple[str, str], int] = defaultdict(int)
     group_limit = max(1, math.ceil(sample_count / 27))
@@ -418,7 +504,7 @@ def _prepare_cnr_demo(
             stem = Path(filename).stem
             key = (camera, stem)
             group = (weather, camera)
-            if key in selected or len(selected) >= sample_count:
+            if key in selected:
                 continue
             if group_counts[group] >= group_limit:
                 continue
@@ -437,7 +523,7 @@ def _prepare_cnr_demo(
             group_counts[group] += 1
 
     occupancy: dict[tuple[str, str], dict[str, bool]] = defaultdict(dict)
-    with (data_root / CNR_LABELS).open(encoding="utf-8-sig", newline="") as handle:
+    with (source_root / CNR_LABELS).open(encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle):
             camera_value = str(row.get("camera", ""))
             if not camera_value.isdigit():
@@ -484,12 +570,13 @@ def _prepare_cnr_demo(
                     condition=str(record["condition"]),
                     split=None,
                     image_path=image_path,
-                    data_root=data_root,
+                    data_root=output_root,
                     width=width,
                     height=height,
                     slots=slots,
                 )
             )
+    scenarios = _diverse_scenario_subset(scenarios, sample_count)
     _emit(progress, f"CNRPark+EXT: prepared {len(scenarios)} scenarios")
     return scenarios
 
@@ -503,31 +590,36 @@ def _acpds_archive(data_root: Path) -> Path:
 
 
 def _prepare_acpds_demo(
-    data_root: Path,
+    source_root: Path,
+    output_root: Path,
     sample_count: int,
     *,
     force: bool,
     progress: ProgressCallback | None,
 ) -> list[dict[str, object]]:
-    archive_path = _acpds_archive(data_root)
-    media_root = data_root / "demo" / "media" / "acpds"
+    archive_path = _acpds_archive(source_root)
+    media_root = output_root / "demo" / "media" / "acpds"
     with zipfile.ZipFile(archive_path) as archive:
         with archive.open("annotations.json") as handle:
             annotations = json.load(handle)
 
         selected: list[tuple[str, int]] = []
-        split_offsets = {split: 0 for split in ("train", "valid", "test")}
-        while len(selected) < sample_count:
-            made_progress = False
-            for split in ("train", "valid", "test"):
-                offset = split_offsets[split]
-                file_names = annotations[split]["file_names"]
-                if offset < len(file_names) and len(selected) < sample_count:
-                    selected.append((split, offset))
-                    split_offsets[split] += 1
-                    made_progress = True
-            if not made_progress:
-                break
+        allocation = {"train": 4, "valid": 3, "test": 3}
+        if sample_count != 10:
+            allocation = {
+                split: sample_count // 3 + int(index < sample_count % 3)
+                for index, split in enumerate(("train", "valid", "test"))
+            }
+        for split in ("train", "valid", "test"):
+            file_names = annotations[split]["file_names"]
+            count = min(allocation[split], len(file_names))
+            if count == 1:
+                indices = [len(file_names) // 2]
+            else:
+                indices = [
+                    round(index * (len(file_names) - 1) / (count - 1)) for index in range(count)
+                ]
+            selected.extend((split, int(index)) for index in indices)
 
         scenarios = []
         for split, index in selected:
@@ -556,7 +648,7 @@ def _prepare_acpds_demo(
                     condition="Mixed",
                     split=split,
                     image_path=image_path,
-                    data_root=data_root,
+                    data_root=output_root,
                     width=width,
                     height=height,
                     slots=slots,
@@ -566,7 +658,9 @@ def _prepare_acpds_demo(
     return scenarios
 
 
-def _catalogue(scenarios: list[dict[str, object]], profile: str) -> dict[str, object]:
+def _catalogue(
+    scenarios: list[dict[str, object]], profile: str, required_minimum_per_dataset: int
+) -> dict[str, object]:
     datasets = []
     for dataset_name in ("PKLot", "CNRPark+EXT", "ACPDS"):
         dataset_scenarios = [row for row in scenarios if row["dataset"] == dataset_name]
@@ -582,6 +676,7 @@ def _catalogue(scenarios: list[dict[str, object]], profile: str) -> dict[str, ob
         "schema_version": SCHEMA_VERSION,
         "generated_at": _now(),
         "profile": profile,
+        "required_minimum_per_dataset": required_minimum_per_dataset,
         "scenario_count": len(scenarios),
         "datasets": datasets,
         "scenarios": scenarios,
@@ -591,7 +686,8 @@ def _catalogue(scenarios: list[dict[str, object]], profile: str) -> dict[str, ob
 def prepare_demo(
     data_root: Path,
     *,
-    samples_per_dataset: int = 3,
+    output_root: Path | None = None,
+    samples_per_dataset: int = 10,
     force: bool = False,
     progress: ProgressCallback | None = print,
     validate_sizes: bool = True,
@@ -599,6 +695,7 @@ def prepare_demo(
     if samples_per_dataset < 1 or samples_per_dataset > 30:
         raise PreparationError("samples_per_dataset must be between 1 and 30")
     data_root = data_root.resolve()
+    output_root = (output_root or data_root).resolve()
     validation = validate_archive_catalogue(data_root, enforce_minimum_size=validate_sizes)
     invalid = [result.label for result in validation if not result.valid]
     if invalid:
@@ -606,19 +703,37 @@ def prepare_demo(
 
     scenarios = []
     scenarios.extend(
-        _prepare_pklot_demo(data_root, samples_per_dataset, force=force, progress=progress)
+        _prepare_pklot_demo(
+            data_root,
+            output_root,
+            samples_per_dataset,
+            force=force,
+            progress=progress,
+        )
     )
     scenarios.extend(
-        _prepare_cnr_demo(data_root, samples_per_dataset, force=force, progress=progress)
+        _prepare_cnr_demo(
+            data_root,
+            output_root,
+            samples_per_dataset,
+            force=force,
+            progress=progress,
+        )
     )
     scenarios.extend(
-        _prepare_acpds_demo(data_root, samples_per_dataset, force=force, progress=progress)
+        _prepare_acpds_demo(
+            data_root,
+            output_root,
+            samples_per_dataset,
+            force=force,
+            progress=progress,
+        )
     )
     scenarios.sort(key=lambda row: (str(row["dataset"]), str(row["id"])))
     if not scenarios:
         raise PreparationError("No scenarios were produced")
 
-    prepared_root = data_root / "prepared"
+    prepared_root = output_root / "prepared"
     for dataset_name, file_name in (
         ("PKLot", "pklot.jsonl"),
         ("CNRPark+EXT", "cnrpark_ext.jsonl"),
@@ -629,8 +744,8 @@ def prepare_demo(
             [row for row in scenarios if row["dataset"] == dataset_name],
         )
 
-    catalogue = _catalogue(scenarios, "demo")
-    catalogue_path = data_root / "demo" / "catalogue.json"
+    catalogue = _catalogue(scenarios, "demo", min(10, samples_per_dataset))
+    catalogue_path = output_root / "demo" / "catalogue.json"
     _atomic_json(catalogue_path, catalogue)
     report = {
         "schema_version": SCHEMA_VERSION,
@@ -638,7 +753,7 @@ def prepare_demo(
         "profile": "demo",
         "samples_per_dataset_requested": samples_per_dataset,
         "scenario_count": len(scenarios),
-        "catalogue_path": catalogue_path.relative_to(data_root).as_posix(),
+        "catalogue_path": catalogue_path.relative_to(output_root).as_posix(),
         "dataset_counts": {
             dataset["name"]: dataset["scenario_count"] for dataset in catalogue["datasets"]
         },
@@ -748,6 +863,8 @@ def verify_prepared_data(data_root: Path) -> dict[str, object]:
         raise PreparationError("Catalogue contains no scenarios")
 
     dataset_counts: dict[str, int] = defaultdict(int)
+    source_hashes: set[str] = set()
+    perceptual_hashes: list[tuple[str, str]] = []
     checked_slots = 0
     for scenario in scenarios:
         image_path = (data_root / str(scenario["image_path"])).resolve()
@@ -761,18 +878,41 @@ def verify_prepared_data(data_root: Path) -> dict[str, object]:
             raise PreparationError(f"Occupied total mismatch: {scenario['id']}")
         if len(slots) != int(scenario["total_spaces"]):
             raise PreparationError(f"Slot total mismatch: {scenario['id']}")
+        source_hash = str(scenario.get("source_sha256", ""))
+        if len(source_hash) != 64:
+            raise PreparationError(f"Missing source hash: {scenario['id']}")
+        if source_hash in source_hashes:
+            raise PreparationError(f"Exact duplicate scenario image: {scenario['id']}")
+        source_hashes.add(source_hash)
+        perceptual_hash = str(scenario.get("perceptual_hash", ""))
+        if len(perceptual_hash) != 16:
+            raise PreparationError(f"Missing perceptual hash: {scenario['id']}")
+        for other_id, other_hash in perceptual_hashes:
+            distance = imagehash.hex_to_hash(perceptual_hash) - imagehash.hex_to_hash(other_hash)
+            if distance <= 1:
+                raise PreparationError(
+                    f"Near-duplicate scenarios detected: {other_id} and {scenario['id']}"
+                )
+        perceptual_hashes.append((str(scenario["id"]), perceptual_hash))
         for slot in slots:
             polygon = slot.get("polygon", [])
-            if len(polygon) < 3:
-                raise PreparationError(f"Invalid polygon: {scenario['id']}")
-            if any(not 0 <= float(value) <= 1 for point in polygon for value in point):
-                raise PreparationError(f"Non-normalized polygon: {scenario['id']}")
+            quality = validate_polygon(polygon)
+            if not quality.valid:
+                raise PreparationError(f"Invalid polygon in {scenario['id']}: {quality.reason}")
         dataset_counts[str(scenario["dataset"])] += 1
         checked_slots += len(slots)
 
     missing_datasets = {"PKLot", "CNRPark+EXT", "ACPDS"} - set(dataset_counts)
     if missing_datasets:
         raise PreparationError(f"Catalogue missing datasets: {', '.join(sorted(missing_datasets))}")
+    required_minimum = int(catalogue.get("required_minimum_per_dataset", 1))
+    under_minimum = {
+        name: count for name, count in dataset_counts.items() if count < required_minimum
+    }
+    if under_minimum:
+        raise PreparationError(
+            f"Catalogue requires at least {required_minimum} scenarios per dataset: {under_minimum}"
+        )
     return {
         "valid": True,
         "catalogue_path": str(catalogue_path),

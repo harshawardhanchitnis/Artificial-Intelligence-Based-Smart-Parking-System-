@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from sqlalchemy import Engine
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 ANALYSIS_COLUMNS = (
     ("model_name", "VARCHAR(100)"),
     ("average_confidence", "FLOAT"),
     ("ground_truth_agreement", "FLOAT"),
     ("prediction_json", "TEXT"),
+    ("source_type", "VARCHAR(20) NOT NULL DEFAULT 'scenario'"),
+    ("media_asset_id", "INTEGER"),
+    ("job_id", "INTEGER"),
+    ("layout_id", "INTEGER"),
+    ("localization_confidence", "FLOAT"),
+    ("result_status", "VARCHAR(30) NOT NULL DEFAULT 'success'"),
 )
 
 

@@ -145,17 +145,34 @@ def load_model(model_root: Path) -> ModelArtifact:
 
 
 def model_status(model_root: Path) -> dict[str, object]:
+    from app.ml.localization import localizer_status
+    from app.ml.occupancy_v3 import occupancy_v3_status
+
     try:
         artifact = load_model(model_root)
     except ModelNotReadyError as exc:
-        return {"ready": False, "model_name": MODEL_NAME, "reason": str(exc)}
+        baseline = {"ready": False, "model_name": MODEL_NAME, "reason": str(exc)}
+    else:
+        baseline = {
+            "ready": True,
+            "model_name": MODEL_NAME,
+            "feature_version": FEATURE_VERSION,
+            "trained_at": artifact.metadata.get("trained_at"),
+            "training_samples": artifact.metadata.get("training_samples"),
+            "validation_samples": artifact.metadata.get("validation_samples"),
+            "test_samples": artifact.metadata.get("test_samples"),
+            "independent_benchmark": artifact.metadata.get("independent_benchmark"),
+        }
+    enhanced = occupancy_v3_status(model_root)
+    localizer = localizer_status(model_root)
+    active = enhanced if enhanced.get("ready") else baseline
     return {
-        "ready": True,
-        "model_name": MODEL_NAME,
-        "feature_version": FEATURE_VERSION,
-        "trained_at": artifact.metadata.get("trained_at"),
-        "training_samples": artifact.metadata.get("training_samples"),
-        "validation_samples": artifact.metadata.get("validation_samples"),
-        "test_samples": artifact.metadata.get("test_samples"),
-        "independent_benchmark": artifact.metadata.get("independent_benchmark"),
+        **baseline,
+        "ready": bool(active.get("ready")),
+        "model_name": active.get("model_name"),
+        "active": active,
+        "baseline": baseline,
+        "enhanced_occupancy": enhanced,
+        "slot_localizer": localizer,
+        "independent_benchmark": baseline.get("independent_benchmark"),
     }

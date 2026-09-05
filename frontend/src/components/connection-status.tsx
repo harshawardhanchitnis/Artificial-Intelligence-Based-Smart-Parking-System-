@@ -47,7 +47,7 @@ export function ConnectionStatus() {
     checking: "Checking local system",
     ready: "Local system ready",
     degraded: "Local system needs attention",
-    offline: "Local backend offline",
+    offline: "Local backend unavailable",
   }[state];
 
   return (

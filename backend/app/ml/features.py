@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
+from app.ml.geometry import RECTIFIED_PATCH_SIZE, rectify_slot
+
 FEATURE_VERSION = "hog-color-v1"
 PATCH_SIZE = 32
 HOG_BINS = 9
@@ -10,7 +12,7 @@ HOG_CELL_SIZE = 8
 
 
 def crop_slot(image: Image.Image, polygon: list[list[float]]) -> Image.Image:
-    """Crop a normalized parking polygon's padded bounding box."""
+    """Historical V1 crop retained only for logistic-v2 reproducibility."""
     width, height = image.size
     xs = [min(1.0, max(0.0, float(point[0]))) * width for point in polygon]
     ys = [min(1.0, max(0.0, float(point[1]))) * height for point in polygon]
@@ -79,3 +81,8 @@ def extract_features(patch: Image.Image) -> np.ndarray:
 
 def scenario_features(image: Image.Image, slots: list[dict[str, object]]) -> np.ndarray:
     return np.stack([extract_features(crop_slot(image, slot["polygon"])) for slot in slots])
+
+
+def rectified_slot_array(image: Image.Image, polygon: list[list[float]]) -> np.ndarray:
+    patch = rectify_slot(image, polygon, size=RECTIFIED_PATCH_SIZE)
+    return np.asarray(patch, dtype=np.float32) / 255.0

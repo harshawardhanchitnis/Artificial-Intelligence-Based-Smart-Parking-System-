@@ -20,9 +20,7 @@ def _valid_metadata() -> dict[str, object]:
         "test_samples": 1800,
         "datasets_used_for_training": ["ACPDS", "CNRPark+EXT", "PKLot"],
         "fitting_policy": FITTING_POLICY,
-        "independent_benchmark": {
-            "unseen_test": {"unique_samples": 1800, "accuracy": 0.906667}
-        },
+        "independent_benchmark": {"unseen_test": {"unique_samples": 1800, "accuracy": 0.906667}},
     }
 
 

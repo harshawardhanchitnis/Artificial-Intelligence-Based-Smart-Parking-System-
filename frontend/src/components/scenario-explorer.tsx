@@ -137,14 +137,14 @@ export function ScenarioExplorer() {
           <div className="flex justify-between"><dt className="text-slate-500">Parking lot</dt><dd className="font-bold">{selected.lot}</dd></div>
           <div className="flex justify-between"><dt className="text-slate-500">Condition</dt><dd className="font-bold">{selected.condition}</dd></div>
         </dl>
-        <button onClick={runAnalysis} disabled={running} className="mt-6 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white disabled:cursor-wait disabled:opacity-60">
+        <button onClick={runAnalysis} disabled={running} className="mt-6 min-h-11 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 disabled:cursor-wait disabled:bg-slate-300 disabled:text-slate-700">
           {running ? "Running local inference…" : "Run local AI analysis"}
         </button>
         {error && <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-700">{error}</p>}
         {analysis && (
           <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-2">
-            <button onClick={() => setView("ground-truth")} className={view === "ground-truth" ? "rounded-lg bg-white px-2 py-2 text-xs font-black shadow-sm" : "px-2 py-2 text-xs font-bold text-slate-500"}>Ground truth</button>
-            <button onClick={() => setView("prediction")} className={view === "prediction" ? "rounded-lg bg-white px-2 py-2 text-xs font-black shadow-sm" : "px-2 py-2 text-xs font-bold text-slate-500"}>AI prediction</button>
+            <button aria-pressed={view === "ground-truth"} onClick={() => setView("ground-truth")} className={view === "ground-truth" ? "min-h-11 rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-900 shadow-sm focus-visible:outline focus-visible:outline-3" : "min-h-11 px-3 py-2 text-xs font-bold text-slate-700 focus-visible:outline focus-visible:outline-3"}>Ground truth</button>
+            <button aria-pressed={view === "prediction"} onClick={() => setView("prediction")} className={view === "prediction" ? "min-h-11 rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-900 shadow-sm focus-visible:outline focus-visible:outline-3" : "min-h-11 px-3 py-2 text-xs font-bold text-slate-700 focus-visible:outline focus-visible:outline-3"}>AI prediction</button>
           </div>
         )}
       </aside>

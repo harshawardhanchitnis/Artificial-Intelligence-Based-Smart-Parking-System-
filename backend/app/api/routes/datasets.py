@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
@@ -55,3 +57,31 @@ def scenario_image(scenario_id: str) -> FileResponse:
     except ScenarioNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Scenario image not found") from exc
     return FileResponse(image_path, media_type="image/jpeg")
+
+
+def _video_catalogue() -> dict[str, object]:
+    path = get_settings().parking_data_root / "demo" / "videos" / "catalogue.json"
+    if not path.is_file():
+        return {"prepared_video_count": 0, "videos": [], "status": "not_prepared"}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=503, detail="Prepared video catalogue is invalid") from exc
+
+
+@router.get("/videos")
+def prepared_videos() -> dict[str, object]:
+    return _video_catalogue()
+
+
+@router.get("/videos/{video_id}/file", response_class=FileResponse)
+def prepared_video_file(video_id: str) -> FileResponse:
+    rows = _video_catalogue().get("videos", [])
+    row = next((value for value in rows if value.get("id") == video_id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Prepared video not found")
+    root = get_settings().parking_data_root.resolve()
+    path = (root / str(row["video_path"])).resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404, detail="Prepared video file not found")
+    return FileResponse(path, media_type="video/mp4", filename=path.name)

@@ -5,7 +5,7 @@ export function RetryPanel({ message }: { message: string }) {
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-xs font-bold text-white"
+        className="mt-4 min-h-11 rounded-lg bg-slate-900 px-4 py-2 text-xs font-bold text-white focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2"
       >
         Retry page
       </button>

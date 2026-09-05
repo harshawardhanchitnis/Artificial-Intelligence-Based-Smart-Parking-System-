@@ -1,51 +1,28 @@
 # Artificial Intelligence Based Smart Parking System
 
-An offline, dataset-driven smart-parking application. The product analyses preloaded parking-lot images and presents occupied and vacant spaces without cameras, sensors, live feeds, or cloud AI APIs.
+A local-first smart-parking product that automatically finds parking spaces in supported fixed-camera imagery,
+classifies each space as vacant or occupied, analyses fixed-camera prerecorded video, and preserves
+traceable results in history, analytics, diagnostics, and reports.
 
-## Version 1.0 status
+## Product capabilities
 
-The application now includes:
-
-- Next.js, React, TypeScript, and Tailwind CSS frontend shell
-- FastAPI backend with health, system, and dataset endpoints
-- SQLite initialization and an analysis-history model
-- PKLot, CNRPark+EXT, and ACPDS archive validation
-- Windows setup, start, and verification scripts
-- CI, VS Code settings, architecture notes, and presentation plan
-- Safe, streaming adapters for PKLot, CNRPark+EXT, and ACPDS
-- A lightweight Demo profile with normalized slot polygons and occupancy labels
-- Prepared catalogue/scenario/image APIs
-- Interactive Analyse and Parking Lots pages backed by real prepared data
-- Local occupancy model training with scenario-group validation
-- Checksum-verified, non-pickle numeric model persistence
-- Per-slot AI predictions, confidence, comparison overlays, and SQLite history
-- Safe additive migration for existing analysis-history databases
-- Live dashboard and operational analytics from saved local inference runs
-- On-demand full-history CSV and per-analysis CSV/JSON reports
-- Five-point offline presentation readiness preflight
-- Deterministic three-dataset showcase with sequential local inference
-- Full-screen guided results with overlays, quality metrics, and report links
-- Confusion-matrix diagnostics with accuracy, precision, recall, specificity, and F1
-- Dataset-level AI quality comparison and recent error inspection queue
-- Detailed saved-analysis pages with prediction/ground-truth and errors-only overlays
-- Reproducible, group-safe train/validation/unseen-test benchmark preparation
-- Independent benchmark metrics separated from repeated application-run agreement
-- Deep seven-point readiness checks with SQLite integrity validation
-- Request IDs, safe API errors, response timing, and browser security headers
-- Frontend API timeouts, retry states, and a live local-system status indicator
-- Repeatable nine-route runtime smoke testing with optional persisted inference
-- Canonical Version 1.0 identity across the repository, backend, frontend, API, and UI
-- Machine-checkable final release contract and deterministic presentation handover runbook
-
-The application now distinguishes verified dataset ground truth from actual local AI predictions, persists model-quality fields, and turns saved runs into presentation analytics and reports. The lightweight model runs on CPU, requires no pretrained download, and remains fully offline. Full dataset extraction is still optional and is not required for the demo.
+- Automatic registered fixed-camera layout recognition with explicit confidence and
+  unsupported-layout handling; universal or moving-camera localisation is not claimed
+- Calibrated per-space occupancy inference with the reproducible logistic V2 baseline retained
+- MP4 and AVI fixed-camera video processing with layout reuse, camera-stability checks, temporal
+  smoothing, progress, cancellation, playback, events, and an occupancy timeline
+- At least ten visually reviewed prepared image scenarios per PKLot, CNRPark+EXT, and ACPDS
+- Three prepared PKLot and three prepared CNRPark+EXT time-lapse demonstrations; ACPDS is excluded
+  because its files do not provide defensible continuous-camera sequences
+- SQLite persistence, analytics, independent diagnostics, downloadable reports, and a guided
+  presentation workflow
+- Local processing with no sensor, live-feed, cloud-inference, or generative-AI dependency
 
 ## Prerequisites
 
-- Windows 10 or 11
-- Git
-- Python 3.13
-- Node.js 22 and npm
-- Dataset archives stored in `D:\Projects\AI Based Smart Parking System Data\archives`
+- Windows 10 or 11, Git, Python 3.12 or 3.13, Node.js 22, and npm
+- Dataset archives under `D:\Projects\AI Based Smart Parking System Data\archives`
+- NVIDIA GPU recommended for model development; deployment inference is CPU compatible
 
 ## First-time setup
 
@@ -56,79 +33,89 @@ Copy-Item -LiteralPath '.env.example' -Destination '.env'
 powershell -ExecutionPolicy Bypass -File '.\scripts\setup.ps1'
 ```
 
-The setup script creates `backend\.venv`, installs the backend and frontend dependencies, initializes SQLite, validates the dataset archive catalogue, and runs smoke tests.
+The setup creates the Python environment, installs frontend packages, initializes the additive
+SQLite schema, validates the archive catalogue, and runs smoke checks.
 
-Existing Milestone 3 databases are upgraded safely during setup. The migration can also be run directly with `scripts\migrate-database.ps1`.
+## Prepare refinement data
 
-Prepare the lightweight offline catalogue and scientific benchmark:
+Preparation writes only to the external dataset root configured by `PARKING_DATA_ROOT`:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File '.\scripts\prepare-datasets.ps1' -Profile Plan
-powershell -ExecutionPolicy Bypass -File '.\scripts\prepare-datasets.ps1' -Profile Demo -SamplesPerDataset 3
-powershell -ExecutionPolicy Bypass -File '.\scripts\prepare-datasets.ps1' -Profile Benchmark
-powershell -ExecutionPolicy Bypass -File '.\scripts\train-model.ps1'
-powershell -ExecutionPolicy Bypass -File '.\scripts\benchmark-model.ps1'
+powershell -ExecutionPolicy Bypass -File '.\scripts\prepare-refinement-data.ps1' `
+  -Profile Standard `
+  -ArtifactRoot 'D:\Projects\AI Based Smart Parking System Data' `
+  -PrepareVideos
 ```
+
+Review the three generated scenario contact sheets, then record the human geometry review:
+
+```powershell
+backend\.venv\Scripts\python.exe -m app.cli.audit_scenarios `
+  --data-root 'D:\Projects\AI Based Smart Parking System Data' `
+  --confirm-reviewer 'YOUR NAME'
+```
+
+## Develop and freeze enhanced models
+
+Development uses only train and validation partitions. Inspect the development reports before
+opening either final protected holdout:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File '.\scripts\develop-enhanced-models.ps1' `
+  -Profile Standard `
+  -DataRoot 'D:\Projects\AI Based Smart Parking System Data'
+powershell -ExecutionPolicy Bypass -File '.\scripts\finalize-protected-models.ps1' `
+  -ConfirmSingleHoldoutUse `
+  -DataRoot 'D:\Projects\AI Based Smart Parking System Data'
+```
+
+Each finalization command is single-use and refuses a repeat. The protected methodology, model
+artifacts, training state, and reports remain outside Git. See
+`docs\integrated-refinement\README.md` before running these commands.
 
 ## Start the application
 
-Open two VS Code terminals.
-
-Terminal 1:
+Open two PowerShell terminals:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File '.\scripts\start-backend.ps1'
 ```
 
-Terminal 2:
-
 ```powershell
 powershell -ExecutionPolicy Bypass -File '.\scripts\start-frontend.ps1'
 ```
 
-Then open:
-
-- Frontend: <http://localhost:3000>
-- Backend API documentation: <http://127.0.0.1:8000/docs>
-- Backend health: <http://127.0.0.1:8000/api/v1/health>
+Open <http://localhost:3000>. API documentation is available at
+<http://127.0.0.1:8000/docs>.
 
 ## Verification
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File '.\scripts\verify.ps1'
+powershell -ExecutionPolicy Bypass -File '.\scripts\verify-refinement.ps1'
 ```
 
-With the backend and frontend running, verify the complete local product without changing
-history:
+With both services running, the existing reliability and presentation checks remain available:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File '.\scripts\reliability-check.ps1'
 ```
 
-To include one real inference and persistence check against the current local database, add
-`-IncludeInference`. This intentionally creates one new analysis-history row.
+## Data and artifact policy
 
-For final Version 1.0 handover, start both services and run:
+Datasets, extracted/prepared media, uploads, generated video, SQLite files, Python environments,
+frontend dependencies, model weights, training state, and model reports are runtime artifacts and
+must not be committed. The repository contains only code, tests, scripts, and documentation.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File '.\scripts\release-check.ps1'
-```
+The frozen `parking-occupancy-logistic-v2` files remain a reproducible baseline. Enhanced occupancy
+and slot-localisation artifacts are checksum-verified ONNX files generated by the controlled local
+workflow. Prepared catalogue scenarios are exposed evidence and are never used for model selection.
 
-The default is read-only. Add `-IncludeInference` only when one final saved inference record is
-desired. See `docs\presentation-guide\README.md` for the five-minute demonstration sequence and
-recovery checklist.
+## Supported scope
 
-## Dataset policy
-
-The original datasets, extracted images, generated demo media, SQLite databases, and trained model weights are not committed to Git. The external dataset root is configured with `PARKING_DATA_ROOT` in `.env`.
-
-The bounded benchmark cache is written under `PARKING_DATA_ROOT\prepared\ml-benchmark`.
-Its manifest, selected patches, reports, and model artifacts remain local and outside Git.
-
-## Project boundaries
-
-- No hardware or sensor integration
-- No CCTV, webcam, RTSP, or live traffic data
-- No Gemini, OpenAI, or other inference API
-- The final presentation uses curated, preloaded scenarios
-- AI inference runs locally and produces slot overlays and occupancy totals
+- Still images from the learned PKLot and CNRPark+EXT fixed-camera layouts; unfamiliar views may be
+  rejected rather than assigned a fabricated count
+- Prerecorded fixed-camera video; moving-camera/dashcam support is not claimed
+- Automatic localisation is the primary workflow
+- Advanced layout correction is an optional audited fallback, not a normal prerequisite
+- No hardware or live camera integration

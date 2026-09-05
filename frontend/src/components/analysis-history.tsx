@@ -46,7 +46,7 @@ export function AnalysisHistory() {
                 <td className="p-4 text-xs"><p className="font-bold">{record.average_confidence === null ? "Legacy run" : `${(record.average_confidence * 100).toFixed(1)}% confidence`}</p><p className="mt-1 text-slate-400">{record.ground_truth_agreement === null ? "No saved metric" : `${(record.ground_truth_agreement * 100).toFixed(1)}% agreement`}</p></td>
                 <td className="p-4 font-semibold">{record.processing_time_ms.toFixed(1)} ms</td>
                 <td className="p-4 text-slate-500">{new Date(record.created_at).toLocaleString()}</td>
-                <td className="p-4"><Link href={`/history/${record.id}`} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Inspect</Link></td>
+                <td className="p-4"><Link href={`/history/${record.id}`} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Inspect</Link></td>
               </tr>
             ))}
           </tbody>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { RetryPanel } from "@/components/retry-panel";
+import { StatusBadge } from "@/components/ui";
 import { apiErrorMessage, apiFetch } from "@/lib/api-client";
 
 type Matrix = { true_occupied: number; true_vacant: number; false_occupied: number; false_vacant: number };
@@ -13,7 +14,8 @@ type DatasetBenchmark = BenchmarkMetrics & { dataset: string };
 type SlotError = { analysis_id: number; dataset: string; scenario_id: string; slot_id: string; predicted_occupied: boolean; ground_truth_occupied: boolean; confidence: number | null };
 type ApplicationRuns = { semantic_label: string; total_runs: number; prediction_enabled_runs: number; legacy_runs: number; stored_slot_predictions: number; unique_scenarios: number; unique_scenario_slots: number; repeated_slot_predictions: number; includes_repeated_executions: boolean; context_note: string; overall: RunMetrics; dataset_breakdown: (RunMetrics & { dataset: string })[]; recent_errors: SlotError[] };
 type Benchmark = { validation: BenchmarkMetrics; unseen_test: BenchmarkMetrics; unseen_test_by_dataset: DatasetBenchmark[] };
-type Diagnostics = { application_runs: ApplicationRuns; independent_benchmark: Benchmark | null; benchmark_available: boolean };
+type EnhancedModel = { ready: boolean; model_name?: string; architecture?: string; reason?: string; final_holdout?: BenchmarkMetrics };
+type Diagnostics = { application_runs: ApplicationRuns; independent_benchmark: Benchmark | null; benchmark_available: boolean; enhanced_occupancy: EnhancedModel };
 
 const percent = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(1)}%`;
 
@@ -53,8 +55,16 @@ export function DiagnosticsDashboard() {
   if (!report) return <div className="card mt-8 p-6 text-sm text-slate-500">Loading model benchmark and stored-run diagnostics…</div>;
   const runs = report.application_runs;
   const benchmark = report.independent_benchmark;
+  const enhanced = report.enhanced_occupancy;
 
   return <div className="mt-8 space-y-8">
+    <section className="space-y-5">
+      <div><p className="label">Enhanced occupancy model</p><h2 className="mt-1 text-2xl font-black">Leakage-safe refinement protocol</h2><p className="mt-2 max-w-4xl text-sm text-slate-500">This evidence is produced by the new grouped train/validation/final-holdout protocol. The protected holdout is opened only after the candidate and threshold are frozen.</p></div>
+      {enhanced.ready && enhanced.final_holdout ? <>
+        <div className="flex flex-wrap gap-3 text-sm"><StatusBadge tone="success">{enhanced.model_name ?? "Enhanced model"} ready</StatusBadge>{enhanced.architecture ? <StatusBadge>Validation-selected architecture: {enhanced.architecture}</StatusBadge> : null}</div>
+        <MetricCards metrics={enhanced.final_holdout} />
+      </> : <div className="card border-amber-200 bg-amber-50 p-6 text-sm text-amber-900"><p className="font-bold">Enhanced model evidence is not finalized.</p><p className="mt-1">{enhanced.reason ?? "Run development, freeze the decision, and execute the protected holdout once."}</p></div>}
+    </section>
     <section className="space-y-5">
       <div><p className="label">Independent model benchmark</p><h2 className="mt-1 text-2xl font-black">Unseen test performance</h2><p className="mt-2 max-w-4xl text-sm text-slate-500">These samples were excluded from model fitting, threshold selection, and feature decisions. Re-running an application scenario does not alter these results.</p></div>
       {benchmark ? <>
@@ -72,7 +82,7 @@ export function DiagnosticsDashboard() {
         {[["Agreement", runs.overall.accuracy], ["Occupied precision", runs.overall.precision], ["Occupied recall", runs.overall.recall], ["Vacant specificity", runs.overall.specificity], ["F1 score", runs.overall.f1_score]].map(([label, value]) => <article className="card p-5" key={String(label)}><p className="label">{label}</p><p className="mt-3 text-3xl font-black">{percent(value as number | null)}</p></article>)}
       </div>
       <article className="card p-6"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><div><p className="label">Prediction-enabled runs</p><p className="mt-2 text-2xl font-black">{runs.prediction_enabled_runs}</p></div><div><p className="label">Stored predictions</p><p className="mt-2 text-2xl font-black">{runs.stored_slot_predictions}</p></div><div><p className="label">Unique scenarios</p><p className="mt-2 text-2xl font-black">{runs.unique_scenarios}</p></div><div><p className="label">Unique scenario slots</p><p className="mt-2 text-2xl font-black">{runs.unique_scenario_slots}</p></div><div><p className="label">Repeated predictions</p><p className="mt-2 text-2xl font-black text-amber-700">{runs.repeated_slot_predictions}</p></div></div><p className="mt-5 text-xs text-slate-500">{runs.legacy_runs} legacy runs excluded from slot agreement.</p></article>
-      <article className="card overflow-hidden"><div className="border-b border-slate-100 p-5"><p className="label">Inspection queue</p><h3 className="mt-1 text-lg font-bold">Recent incorrect stored predictions</h3></div>{runs.recent_errors.length ? <div className="divide-y divide-slate-100">{runs.recent_errors.map((row, index) => <div className="flex flex-col justify-between gap-3 p-4 md:flex-row md:items-center" key={`${row.analysis_id}-${row.slot_id}-${index}`}><div><p className="text-sm font-bold">{row.dataset} · slot {row.slot_id}</p><p className="mt-1 text-xs text-slate-500">Predicted {row.predicted_occupied ? "occupied" : "vacant"}; ground truth {row.ground_truth_occupied ? "occupied" : "vacant"}{row.confidence === null ? "" : ` · ${(row.confidence * 100).toFixed(1)}% confidence`}</p></div><Link href={`/history/${row.analysis_id}`} className="rounded-lg bg-slate-900 px-4 py-2 text-center text-xs font-bold text-white">Inspect analysis</Link></div>)}</div> : <div className="p-8 text-center text-sm font-semibold text-emerald-700">No incorrect predictions are present in the stored detailed runs.</div>}</article>
+      <article className="card overflow-hidden"><div className="border-b border-slate-100 p-5"><p className="label">Inspection queue</p><h3 className="mt-1 text-lg font-bold">Recent incorrect stored predictions</h3></div>{runs.recent_errors.length ? <div className="divide-y divide-slate-100">{runs.recent_errors.map((row, index) => <div className="flex flex-col justify-between gap-3 p-4 md:flex-row md:items-center" key={`${row.analysis_id}-${row.slot_id}-${index}`}><div><p className="text-sm font-bold">{row.dataset} · slot {row.slot_id}</p><p className="mt-1 text-xs text-slate-500">Predicted {row.predicted_occupied ? "occupied" : "vacant"}; ground truth {row.ground_truth_occupied ? "occupied" : "vacant"}{row.confidence === null ? "" : ` · ${(row.confidence * 100).toFixed(1)}% confidence`}</p></div><Link href={`/history/${row.analysis_id}`} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-center text-xs font-bold text-white">Inspect analysis</Link></div>)}</div> : <div className="p-8 text-center text-sm font-semibold text-emerald-700">No incorrect predictions are present in the stored detailed runs.</div>}</article>
     </section>
   </div>;
 }

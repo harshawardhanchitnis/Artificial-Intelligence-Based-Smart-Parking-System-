@@ -20,8 +20,8 @@ def test_readiness_endpoint_returns_structured_checks() -> None:
     assert response.status_code in {200, 503}
     payload = response.json()
     assert payload["status"] in {"ready", "not_ready"}
-    assert payload["summary"]["total"] == 7
-    assert len(payload["checks"]) == 7
+    assert payload["summary"]["total"] == 9
+    assert len(payload["checks"]) == 9
 
 
 def test_system_endpoint_confirms_offline_scope() -> None:

@@ -27,6 +27,12 @@ def record_payload(record: AnalysisRecord, *, include_predictions: bool = False)
         "model_name": record.model_name,
         "average_confidence": record.average_confidence,
         "ground_truth_agreement": record.ground_truth_agreement,
+        "source_type": record.source_type,
+        "media_asset_id": record.media_asset_id,
+        "job_id": record.job_id,
+        "layout_id": record.layout_id,
+        "localization_confidence": record.localization_confidence,
+        "result_status": record.result_status,
         "created_at": record.created_at,
     }
     if include_predictions:
