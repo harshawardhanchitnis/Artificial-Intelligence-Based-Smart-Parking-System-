@@ -4,33 +4,39 @@ import { useEffect, useState } from "react";
 
 import { apiFetch } from "@/lib/api-client";
 
-type Readiness = { ready: boolean; summary: { passed: number; total: number } };
-type State = "checking" | "ready" | "degraded" | "offline";
+type Liveness = {
+  status: string;
+  timestamp: string;
+  version: string;
+};
+
+type State = "checking" | "ready" | "offline";
 
 export function ConnectionStatus() {
   const [state, setState] = useState<State>("checking");
-  const [summary, setSummary] = useState("");
 
   useEffect(() => {
     let active = true;
+
     async function check() {
       try {
-        const report = await apiFetch<Readiness>("/health/ready", {
-          timeoutMs: 4_000,
-          acceptedStatuses: [503],
+        const report = await apiFetch<Liveness>("/health/live", {
+          timeoutMs: 3_000,
         });
-        if (active) {
-          setState(report.ready ? "ready" : "degraded");
-          setSummary(`${report.summary.passed}/${report.summary.total} checks`);
-        }
+
+        if (!active) return;
+
+        setState(report.status === "alive" ? "ready" : "offline");
       } catch {
         if (!active) return;
         setState("offline");
-        setSummary("");
       }
     }
+
     void check();
+
     const interval = window.setInterval(check, 15_000);
+
     return () => {
       active = false;
       window.clearInterval(interval);
@@ -40,18 +46,20 @@ export function ConnectionStatus() {
   const styles = {
     checking: "border-slate-200 bg-slate-50 text-slate-500",
     ready: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    degraded: "border-amber-200 bg-amber-50 text-amber-700",
     offline: "border-red-200 bg-red-50 text-red-700",
   }[state];
+
   const label = {
     checking: "Checking local system",
-    ready: "Local system ready",
-    degraded: "Local system needs attention",
+    ready: "Local backend connected",
     offline: "Local backend unavailable",
   }[state];
 
   return (
-    <div className={`rounded-full border px-3 py-1.5 text-xs font-bold ${styles}`} title={summary} aria-live="polite">
+    <div
+      className={`rounded-full border px-3 py-1.5 text-xs font-bold ${styles}`}
+      aria-live="polite"
+    >
       {label}
     </div>
   );

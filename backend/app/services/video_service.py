@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -32,6 +34,63 @@ from app.services.media_service import resolve_media_path
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="parking-video")
 _SUBMIT_LOCK = threading.Lock()
+
+
+def _encode_browser_video(source_path: Path, output_path: Path) -> None:
+    ffmpeg = shutil.which("ffmpeg")
+
+    if ffmpeg is None:
+        manual_root = Path.home() / "Tools" / "ffmpeg"
+        candidates = sorted(manual_root.glob("**/bin/ffmpeg.exe"))
+        if candidates:
+            ffmpeg = str(candidates[0])
+
+    if ffmpeg is None:
+        raise RuntimeError(
+            "FFmpeg was not found in PATH or under "
+            f"{Path.home() / 'Tools' / 'ffmpeg'}."
+        )
+
+    output_path.unlink(missing_ok=True)
+
+    command = [
+        ffmpeg,
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        str(source_path),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-an",
+        str(output_path),
+    ]
+
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+    )
+
+    if completed.returncode != 0:
+        output_path.unlink(missing_ok=True)
+        detail = (completed.stderr or completed.stdout or "Unknown FFmpeg error").strip()
+        raise RuntimeError(
+            f"Browser-compatible H.264 encoding failed: {detail[-800:]}"
+        )
+
+    if not output_path.is_file() or output_path.stat().st_size == 0:
+        raise RuntimeError("FFmpeg did not produce a valid browser-compatible video")
 
 
 def recover_interrupted_jobs() -> int:
@@ -194,9 +253,15 @@ def _process_video(job_id: int) -> None:
         expected = max(1, int(duration * sample_fps))
         relative_result = Path("media") / "results" / "videos" / f"{uuid.uuid4().hex}.mp4"
         result_path = settings.parking_data_root / relative_result
+        temporary_result_path = result_path.with_name(
+            f"{result_path.stem}.working.mp4"
+        )
         result_path.parent.mkdir(parents=True, exist_ok=True)
         writer = cv2.VideoWriter(
-            str(result_path), cv2.VideoWriter_fourcc(*"mp4v"), sample_fps, (width, height)
+            str(temporary_result_path),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            sample_fps,
+            (width, height),
         )
         if not writer.isOpened():
             raise RuntimeError("MP4 result encoder is unavailable")
@@ -214,7 +279,7 @@ def _process_video(job_id: int) -> None:
             if _cancelled(job_id):
                 capture.release()
                 writer.release()
-                result_path.unlink(missing_ok=True)
+                temporary_result_path.unlink(missing_ok=True)
                 _update_job(
                     job_id, status="cancelled", phase="cancelled", finished_at=datetime.now(UTC)
                 )
@@ -282,8 +347,28 @@ def _process_video(job_id: int) -> None:
         capture.release()
         writer.release()
         if processed == 0:
-            result_path.unlink(missing_ok=True)
+            temporary_result_path.unlink(missing_ok=True)
             raise RuntimeError("No stable frames were available for fixed-camera analysis")
+
+        if _cancelled(job_id):
+            temporary_result_path.unlink(missing_ok=True)
+            _update_job(
+                job_id,
+                status="cancelled",
+                phase="cancelled",
+                finished_at=datetime.now(UTC),
+            )
+            return
+
+        _update_job(
+            job_id,
+            phase="browser_encoding",
+            progress=0.985,
+        )
+
+        _encode_browser_video(temporary_result_path, result_path)
+        temporary_result_path.unlink(missing_ok=True)
+
         final_values = next(
             value for value in reversed(timeline) if value.get("status") == "observed"
         )

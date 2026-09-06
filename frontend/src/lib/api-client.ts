@@ -58,7 +58,16 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 }
 
 export function apiUrl(path: string): string {
-  return `${apiBase}${path.startsWith("/") ? path : `/${path}`}`;
+  if (/^https?:\/\//i.test(path)) return path;
+
+  const normalized =
+    path === "/api/v1"
+      ? ""
+      : path.startsWith("/api/v1/")
+        ? path.slice("/api/v1".length)
+        : path;
+
+  return `${apiBase}${normalized.startsWith("/") ? normalized : `/${normalized}`}`;
 }
 
 export function apiErrorMessage(reason: unknown): string {

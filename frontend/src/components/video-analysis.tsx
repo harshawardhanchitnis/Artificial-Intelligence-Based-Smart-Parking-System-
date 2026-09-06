@@ -16,6 +16,8 @@ export function VideoAnalysis() {
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState("");
   const [prepared, setPrepared] = useState<PreparedVideo[]>([]);
+  const [playbackTime, setPlaybackTime] = useState(0);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
 
   useEffect(() => {
     apiFetch<{ videos: PreparedVideo[] }>("/datasets/videos")
@@ -59,7 +61,23 @@ export function VideoAnalysis() {
 
   const active = job && ["queued", "running"].includes(job.status);
   const observedTimeline = result?.timeline.filter((point) => point.status === "observed" && point.occupied_spaces !== null && point.vacant_spaces !== null) ?? [];
-  const latest = observedTimeline.at(-1);
+  const currentTimelineIndex =
+    observedTimeline.length > 0 && playbackDuration > 0
+      ? Math.min(
+          observedTimeline.length - 1,
+          Math.max(
+            0,
+            Math.floor(
+              (playbackTime / playbackDuration) * observedTimeline.length,
+            ),
+          ),
+        )
+      : 0;
+
+  const currentPoint =
+    observedTimeline.length > 0
+      ? observedTimeline[currentTimelineIndex]
+      : undefined;
   return (
     <div className="mt-8 grid gap-6 xl:grid-cols-[360px_1fr]">
       <form className="card h-fit p-6" onSubmit={submit}>
@@ -75,7 +93,26 @@ export function VideoAnalysis() {
       </form>
       <section className="card min-h-96 overflow-hidden">
         {!result && <div className="grid min-h-96 place-items-center p-8 text-center text-slate-600"><div><p className="font-bold text-slate-900">Processed playback and occupancy timeline</p><p className="mt-2 text-sm">Moving-camera footage is intentionally not claimed or accepted.</p></div></div>}
-        {result && <><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5"><div><StatusBadge tone="success">Video analysis complete</StatusBadge><p className="mt-2 text-sm text-slate-600">{result.processed_frames} frames processed · {result.dropped_frames} unstable frames marked uncertain{result.analysed_frames_per_second === null ? "" : ` · ${result.analysed_frames_per_second.toFixed(2)} analysed FPS`}</p></div><p className="text-sm font-bold">Camera stability {(result.stability_confidence * 100).toFixed(1)}%</p></div><video controls preload="metadata" src={apiUrl(result.playback_url)} className="aspect-video w-full bg-black">Your browser cannot play the processed video.</video>{latest && <div className="grid grid-cols-3 divide-x divide-slate-200">{[["Time", `${latest.timestamp_seconds.toFixed(1)}s`], ["Vacant", latest.vacant_spaces], ["Occupied", latest.occupied_spaces]].map(([label, value]) => <div key={label} className="p-5 text-center"><p className="text-2xl font-black">{value}</p><p className="mt-1 text-xs font-bold text-slate-600">{label}</p></div>)}</div>}<div className="border-t border-slate-200 p-5"><h3 className="font-bold">Occupancy timeline</h3><div className="mt-3 flex h-28 items-end gap-1 overflow-hidden" aria-label="Occupied spaces over time">{observedTimeline.map((point) => <div key={point.timestamp_seconds} title={`${point.timestamp_seconds}s: ${point.occupied_spaces} occupied`} className="min-w-1 flex-1 bg-amber-400" style={{ height: `${Math.max(5, (point.occupied_spaces ?? 0) / Math.max((point.occupied_spaces ?? 0) + (point.vacant_spaces ?? 0), 1) * 100)}%` }} />)}</div></div></>}
+        {result && <><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5"><div><StatusBadge tone="success">Video analysis complete</StatusBadge><p className="mt-2 text-sm text-slate-600">{result.processed_frames} frames processed · {result.dropped_frames} unstable frames marked uncertain{result.analysed_frames_per_second === null ? "" : ` · ${result.analysed_frames_per_second.toFixed(2)} analysed FPS`}</p></div><p className="text-sm font-bold">Camera stability {(result.stability_confidence * 100).toFixed(1)}%</p></div><video
+  key={result.analysis_id}
+  controls
+  preload="metadata"
+  src={`${apiUrl(result.playback_url)}?analysis=${result.analysis_id}`}
+  onLoadedMetadata={(event) => {
+    setPlaybackDuration(event.currentTarget.duration || 0);
+    setPlaybackTime(event.currentTarget.currentTime || 0);
+  }}
+  onTimeUpdate={(event) => {
+    setPlaybackTime(event.currentTarget.currentTime);
+  }}
+  onSeeked={(event) => {
+    setPlaybackTime(event.currentTarget.currentTime);
+  }}
+  onPlay={(event) => {
+    setPlaybackDuration(event.currentTarget.duration || playbackDuration);
+  }}
+  className="aspect-video w-full bg-black"
+>Your browser cannot play the processed video.</video>{currentPoint && <div className="grid grid-cols-3 divide-x divide-slate-200">{[["Time", `${currentPoint.timestamp_seconds.toFixed(1)}s`], ["Vacant", currentPoint.vacant_spaces], ["Occupied", currentPoint.occupied_spaces]].map(([label, value]) => <div key={label} className="p-5 text-center"><p className="text-2xl font-black">{value}</p><p className="mt-1 text-xs font-bold text-slate-600">{label}</p></div>)}</div>}<div className="border-t border-slate-200 p-5"><h3 className="font-bold">Occupancy timeline</h3><div className="mt-3 flex h-28 items-end gap-1 overflow-hidden" aria-label="Occupied spaces over time">{observedTimeline.map((point) => <div key={point.timestamp_seconds} title={`${point.timestamp_seconds}s: ${point.occupied_spaces} occupied`} className="min-w-1 flex-1 bg-amber-400" style={{ height: `${Math.max(5, (point.occupied_spaces ?? 0) / Math.max((point.occupied_spaces ?? 0) + (point.vacant_spaces ?? 0), 1) * 100)}%` }} />)}</div></div></>}
       </section>
     </div>
   );

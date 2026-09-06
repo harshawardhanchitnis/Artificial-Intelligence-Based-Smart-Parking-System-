@@ -211,4 +211,9 @@ def video_playback(analysis_id: int) -> FileResponse:
         path = resolve_media_path(settings, result.result_video_path)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Result video file not found")
-    return FileResponse(path, media_type="video/mp4", filename=f"parking-video-{analysis_id}.mp4")
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        filename=f"parking-video-{analysis_id}.mp4",
+        content_disposition_type="inline",
+    )
