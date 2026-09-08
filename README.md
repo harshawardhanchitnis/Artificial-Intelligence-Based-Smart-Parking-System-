@@ -161,6 +161,7 @@ The video pipeline supports:
 - occupancy timelines
 - per-space changes/events
 - Vacant + Occupied + Uncertain accounting
+- facility-scoped vehicle counts with mapped / in-area-unmapped / off-site separation
 
 ### Product analytics
 
@@ -467,13 +468,15 @@ Key rules:
 
 ### AI / Computer Vision
 
-- **PyTorch** for model development and training
+- **PyTorch** for model development, training, and export tooling
 - **ONNX Runtime** for deployment inference
 - **OpenCV**
 - **MobileNetV3-Small** occupancy model
 - **YOLO11n-pose** four-corner parking-space localisation
 - dedicated full-scene vehicle detection
 - geometric and temporal fusion logic
+
+The FastAPI serving graph is intentionally **Torch-free**: training/export model definitions are separated from the production ONNX inference path, and `import app.main` does not load `torch` or `torchvision`.
 
 ### Media
 
@@ -533,7 +536,7 @@ Artificial-Intelligence-Based-Smart-Parking-System-/
 │   │   ├── core/               # Configuration
 │   │   ├── datasets/           # Dataset parsing / integrity / preparation
 │   │   ├── db/                 # SQLite models and migrations
-│   │   ├── ml/                 # Localisation, occupancy, geometry, inference
+│   │   ├── ml/                 # Serving inference plus model-development boundaries
 │   │   └── services/           # Analysis, analytics, reliability, video
 │   └── tests/                  # Backend regression tests
 ├── frontend/
@@ -656,6 +659,42 @@ The frontend provides dedicated workflows for:
 
 ---
 
+## Serving Performance
+
+The final serving refactor separated training-only PyTorch code from the production ONNX path and then identified the actual hot-path defect: **ONNX Runtime thread-pool oversubscription across multiple coexisting inference sessions**.
+
+With four ONNX sessions each defaulting to the host's full logical-processor count, inference created far more runnable threads than the CPU could efficiently schedule. A measured **3-thread intra-op cap per session** recovered most of the lost performance.
+
+Representative before/after measurements:
+
+| Measurement | Torch + ORT default | Torch-free + ORT default | Torch-free + 3 ORT threads |
+| --- | ---: | ---: | ---: |
+| Model-stage total | 9,478 ms | 8,621 ms | **1,499 ms** |
+| Application import | 10,077 ms | **1,105 ms** | **1,086 ms** |
+| Product request | 11,396 ms | 9,409 ms | **2,517 ms** |
+| Benchmark request | 2,238 ms | 1,446 ms | **298 ms** |
+
+The measurements also corrected an earlier attribution: merely importing Torch was **not** the cause of the large hot-path slowdown. The expensive part was executing torchvision transforms between ONNX calls together with ONNX Runtime thread oversubscription.
+
+The per-bay occupancy preprocessing was replaced with a NumPy implementation verified bit-identical to the previous transform, reducing that stage from roughly **1,094 ms to 160 ms** in the measured path.
+
+### Output-equivalence validation
+
+The Torch-free refactor itself is byte-identical when ONNX threading is left at the original setting. The final thread cap changes floating-point reduction order by only tiny numerical amounts.
+
+Across **120 images, 3,925 parking bays, and 2,676 vehicle detections**, the final configuration produced:
+
+- **0 occupancy-state changes**
+- **0 vehicle-class changes**
+- **0 count changes**
+- **0 placement changes**
+- maximum normalized corner shift: approximately **8e-08**
+- maximum occupancy-probability shift: approximately **0.003**
+
+`PARKING_ONNX_THREADS=0` can be used to restore the original ONNX threading behaviour where exact byte-for-byte output identity is preferred over the measured speedup.
+
+---
+
 ## Verification
 
 The current integrated verification includes:
@@ -672,14 +711,20 @@ The current integrated verification includes:
 - duplicate video-job protection
 - occupancy accounting checks
 - known-camera and unseen-camera regression coverage
+- serving-path Torch exclusion checks
+- output-equivalence checks after inference-thread tuning
 
 Latest integrated verification reached:
 
-- **173 backend tests passing**
+- **190 backend tests passing**
 - **13/13 system-readiness checks**
-- **17 API endpoints healthy**
+- **31/31 GET route checks healthy**
 - **13 frontend routes rendering**
-- frontend lint/typecheck/build passing
+- Ruff clean
+- frontend lint/typecheck/production build passing
+- end-to-end video analysis completed with duplicate protection returning **409** for the duplicate request
+- per-frame **Vacant + Occupied + Uncertain = Total** reconciliation preserved
+- H.264 browser playback verified
 
 ---
 
@@ -757,6 +802,7 @@ The UI and documentation therefore avoid treating local-only deployment as the p
 - Some steep top-down views can cause vehicle-class confusion even when occupancy evidence remains useful.
 - Automatic calibration has strong development evidence, but a truly new unregistered-camera end-to-end video benchmark remains limited.
 - The current deployment is CPU-oriented; heavier geometry models such as Keypoint R-CNN are more accurate but significantly slower without GPU serving.
+- Python candidate decoding and polygon NMS still account for roughly **340 ms/image** in profiling and remain a future vectorisation opportunity.
 - Live CCTV ingestion and production cloud scaling are future product stages.
 
 ---
@@ -819,6 +865,8 @@ This project produced several important findings:
 6. **Dataset-label quality can matter as much as model architecture.**
 7. **Safe abstention is preferable to fabricated confidence.**
 8. **A stronger model is not automatically the best product model if deployment latency and size are unacceptable.**
+9. **Multiple ONNX Runtime sessions can oversubscribe CPU thread pools; serving concurrency needs explicit thread management.**
+10. **Performance conclusions need controlled A/B measurements — import cost, preprocessing cost, model inference, and scheduler contention must be isolated rather than conflated.**
 
 ---
 
@@ -834,6 +882,7 @@ Future model work can explore:
 - multi-frame geometry learning
 - camera-specific continual revalidation
 - vehicle tracking and parking-event understanding
+- vectorised candidate decoding / polygon NMS
 - live RTSP evaluation
 
 ---
