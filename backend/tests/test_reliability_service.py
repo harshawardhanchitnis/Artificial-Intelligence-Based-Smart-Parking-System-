@@ -1,10 +1,15 @@
 import json
+from types import SimpleNamespace
 
 from sqlalchemy import create_engine
 
 from app.db.session import engine
 from app.services import reliability_service
-from app.services.reliability_service import collect_readiness, database_check
+from app.services.reliability_service import (
+    READINESS_CHECK_COUNT,
+    collect_readiness,
+    database_check,
+)
 
 
 def test_database_check_runs_sqlite_integrity_probe() -> None:
@@ -54,13 +59,30 @@ def test_collect_readiness_requires_every_local_dependency(tmp_path, monkeypatch
             "independent_benchmark": {"unseen_test": {"unique_samples": 1800}},
             "enhanced_occupancy": {"ready": True, "model_name": "enhanced"},
             "slot_localizer": {"ready": True, "model_name": "localizer"},
+            "space_detector": {"ready": True, "model_name": "detector"},
         },
+    )
+    # Vehicle evidence and the fitted fusion are dependencies of the product
+    # pipeline, so readiness reports them; the runtime still degrades to
+    # bay-only occupancy when they are absent.
+    monkeypatch.setattr(
+        reliability_service,
+        "vehicle_detector_status",
+        lambda _root: {"ready": True, "model_name": "vehicle-detector-v3", "input_size": 1280},
+    )
+    monkeypatch.setattr(
+        reliability_service,
+        "load_policy",
+        lambda _root: SimpleNamespace(fitted=True),
     )
 
     report = collect_readiness(tmp_path, tmp_path / "models", create_engine("sqlite://"))
 
     assert report["ready"] is True
-    assert report["summary"] == {"passed": 9, "total": 9}
+    assert report["summary"] == {
+        "passed": READINESS_CHECK_COUNT,
+        "total": READINESS_CHECK_COUNT,
+    }
     assert report["boundaries"] == {"hardware": False, "live_data": False, "cloud_ai": False}
 
 

@@ -22,6 +22,7 @@ import imagehash
 from PIL import Image
 
 from app.datasets.archive_validator import validate_archive_catalogue
+from app.datasets.labels import parse_occupancy_attribute
 from app.ml.geometry import order_polygon, validate_polygon
 
 ProgressCallback = Callable[[str], None]
@@ -308,11 +309,16 @@ def _parse_pklot_xml(xml_path: Path, width: int, height: int) -> list[dict[str, 
             )
         if len(points) < 3:
             continue
+        occupied = parse_occupancy_attribute(space.attrib.get("occupied"))
+        if occupied is None:
+            # A space with no usable ``occupied`` attribute is unlabelled, not
+            # vacant.  Dropping it keeps demo scenarios free of invented labels.
+            continue
         slots.append(
             {
                 "id": str(space.attrib.get("id", len(slots) + 1)),
                 "polygon": points,
-                "occupied": space.attrib.get("occupied") == "1",
+                "occupied": occupied,
             }
         )
     return slots

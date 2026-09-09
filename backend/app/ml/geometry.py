@@ -5,7 +5,7 @@ from math import atan2
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 
 RECTIFIED_PATCH_SIZE = 128
 MIN_POLYGON_AREA = 1e-5
@@ -126,6 +126,93 @@ def _quad_destination(points: np.ndarray, size: int) -> np.ndarray:
     )
 
 
+def _region_of_interest(
+    points: np.ndarray, width: int, height: int, *, margin: int = 2
+) -> tuple[int, int, int, int]:
+    """Integer bounding box of a slot polygon, clamped to the image.
+
+    The two-pixel margin keeps the bilinear neighbourhood that ``warpPerspective``
+    reads at the polygon edge inside the cropped region, so warping the crop
+    matches warping the full frame.
+    """
+    left = int(np.floor(points[:, 0].min())) - margin
+    top = int(np.floor(points[:, 1].min())) - margin
+    right = int(np.ceil(points[:, 0].max())) + margin
+    bottom = int(np.ceil(points[:, 1].max())) + margin
+    left = max(0, min(left, width - 1))
+    top = max(0, min(top, height - 1))
+    right = max(left + 1, min(right, width))
+    bottom = max(top + 1, min(bottom, height))
+    return left, top, right, bottom
+
+
+def _rectify_quad(pixels: np.ndarray, points: np.ndarray, size: int) -> np.ndarray:
+    """Warp a four-point slot from the source array.
+
+    Only the polygon's bounding region is touched.  Warping a translated
+    source is identical to warping the full frame because the translation is
+    folded into the perspective matrix, and slot polygons are validated to lie
+    inside the image before they reach here.
+    """
+    destination = _quad_destination(points, size)
+    height, width = pixels.shape[:2]
+    left, top, right, bottom = _region_of_interest(points, width, height)
+    region = pixels[top:bottom, left:right]
+    local = points - np.asarray([left, top], dtype=np.float32)
+    matrix = cv2.getPerspectiveTransform(np.ascontiguousarray(local), destination)
+    warped = cv2.warpPerspective(
+        region,
+        matrix,
+        (size, size),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(127, 127, 127),
+    )
+    mask = np.zeros(region.shape[:2], dtype=np.uint8)
+    cv2.fillPoly(mask, [np.rint(local).astype(np.int32)], 255)
+    warped_mask = cv2.warpPerspective(mask, matrix, (size, size), flags=cv2.INTER_NEAREST)
+    warped[warped_mask == 0] = 127
+    return warped
+
+
+def _rectify_polygon(pixels: np.ndarray, points: np.ndarray, size: int) -> np.ndarray:
+    """Crop-and-mask fallback for slots that are not simple quadrilaterals."""
+    height, width = pixels.shape[:2]
+    left, top, right, bottom = _region_of_interest(points, width, height, margin=0)
+    region = pixels[top:bottom, left:right]
+    local = points - np.asarray([left, top], dtype=np.float32)
+    mask = np.zeros(region.shape[:2], dtype=np.uint8)
+    cv2.fillPoly(mask, [np.rint(local).astype(np.int32)], 255)
+    masked = np.where(mask[:, :, None] == 0, np.uint8(127), region)
+    return cv2.resize(masked, (size, size), interpolation=cv2.INTER_LINEAR)
+
+
+def rectify_slots(
+    image: Image.Image,
+    polygons: list[list[list[float]]],
+    *,
+    size: int = RECTIFIED_PATCH_SIZE,
+) -> list[Image.Image]:
+    """Rectify many slots from one image, converting the source only once."""
+    if not polygons:
+        return []
+    source = image if image.mode == "RGB" else image.convert("RGB")
+    pixels = np.asarray(source)
+    patches = []
+    for polygon in polygons:
+        quality = validate_polygon(polygon)
+        if not quality.valid:
+            raise ValueError(f"Invalid parking-space polygon: {quality.reason}")
+        points = _pixel_points(source, polygon)
+        warped = (
+            _rectify_quad(pixels, points, size)
+            if len(points) == 4
+            else _rectify_polygon(pixels, points, size)
+        )
+        patches.append(Image.fromarray(warped, mode="RGB"))
+    return patches
+
+
 def rectify_slot(
     image: Image.Image,
     polygon: list[list[float]],
@@ -133,39 +220,7 @@ def rectify_slot(
     size: int = RECTIFIED_PATCH_SIZE,
 ) -> Image.Image:
     """Perspective-rectify a normalized slot polygon and mask non-slot pixels."""
-    quality = validate_polygon(polygon)
-    if not quality.valid:
-        raise ValueError(f"Invalid parking-space polygon: {quality.reason}")
-    rgb = image.convert("RGB")
-    points = _pixel_points(rgb, polygon)
-    if len(points) == 4:
-        destination = _quad_destination(points, size)
-        matrix = cv2.getPerspectiveTransform(points, destination)
-        pixels = np.asarray(rgb)
-        warped = cv2.warpPerspective(
-            pixels,
-            matrix,
-            (size, size),
-            flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_CONSTANT,
-            borderValue=(127, 127, 127),
-        )
-        mask = np.zeros((rgb.height, rgb.width), dtype=np.uint8)
-        cv2.fillPoly(mask, [np.rint(points).astype(np.int32)], 255)
-        warped_mask = cv2.warpPerspective(mask, matrix, (size, size), flags=cv2.INTER_NEAREST)
-        warped[warped_mask == 0] = 127
-        return Image.fromarray(warped, mode="RGB")
-
-    left, top = np.floor(points.min(axis=0)).astype(int)
-    right, bottom = np.ceil(points.max(axis=0)).astype(int)
-    right = max(right, left + 1)
-    bottom = max(bottom, top + 1)
-    crop = rgb.crop((left, top, right + 1, bottom + 1))
-    translated = [(float(x - left), float(y - top)) for x, y in points]
-    mask = Image.new("L", crop.size, 0)
-    ImageDraw.Draw(mask).polygon(translated, fill=255)
-    neutral = Image.new("RGB", crop.size, (127, 127, 127))
-    return Image.composite(crop, neutral, mask).resize((size, size), Image.Resampling.BILINEAR)
+    return rectify_slots(image, [polygon], size=size)[0]
 
 
 def polygon_iou(first: list[list[float]], second: list[list[float]]) -> float:

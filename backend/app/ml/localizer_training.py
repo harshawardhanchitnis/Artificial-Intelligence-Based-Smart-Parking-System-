@@ -20,9 +20,11 @@ from app.ml.localization import (
     GRID_WIDTH,
     LOCALIZER_METADATA,
     LOCALIZER_NAME,
-    ParkingSlotLocalizer,
     SlotLocalizerPredictor,
     decode_localizer_output,
+)
+from app.ml.localization_training import (
+    ParkingSlotLocalizer,
     export_localizer,
     localizer_preprocessing,
     localizer_targets,
@@ -30,10 +32,12 @@ from app.ml.localization import (
 from app.ml.occupancy_v3 import OccupancyV3NotReadyError, OccupancyV3Predictor
 from app.ml.template_localizer import (
     TemplateLayoutRegistry,
-    build_layout_classifier,
     constrain_layout_logits,
-    export_layout_classifier,
     layout_key,
+)
+from app.ml.template_localizer_training import (
+    build_layout_classifier,
+    export_layout_classifier,
     layout_preprocessing,
 )
 from app.ml.training import classification_metrics

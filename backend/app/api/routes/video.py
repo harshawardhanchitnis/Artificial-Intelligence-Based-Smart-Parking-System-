@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 import cv2
@@ -22,6 +23,10 @@ from app.services.video_service import submit_video_job
 
 router = APIRouter()
 
+# Serialises the check-then-insert in _queue_job so two near-simultaneous
+# submissions cannot both create a job for the same media asset.
+_QUEUE_LOCK = threading.Lock()
+
 
 def _job_payload(job: AnalysisJob) -> dict[str, object]:
     return {
@@ -41,12 +46,40 @@ def _job_payload(job: AnalysisJob) -> dict[str, object]:
     }
 
 
+ACTIVE_JOB_STATUSES = ("queued", "running")
+
+
 def _queue_job(session: Session, media: MediaAsset) -> dict[str, object]:
-    job = AnalysisJob(media_asset_id=media.id, kind="fixed_camera_video")
-    session.add(job)
-    session.commit()
-    session.refresh(job)
-    payload = _job_payload(job)
+    """Queue one analysis for this media asset, refusing a concurrent duplicate.
+
+    A double-clicked button or a retried request arrives as two POSTs a few
+    milliseconds apart.  The lock makes the "is one already active?" check and
+    the insert a single step, so only the first submission creates a job and the
+    rest are told which job they should follow instead.
+    """
+    with _QUEUE_LOCK:
+        active = session.scalar(
+            select(AnalysisJob)
+            .where(
+                AnalysisJob.media_asset_id == media.id,
+                AnalysisJob.status.in_(ACTIVE_JOB_STATUSES),
+            )
+            .order_by(AnalysisJob.id.desc())
+        )
+        if active is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This video is already being analysed. "
+                    f"Follow job {active.id} instead of submitting it again."
+                ),
+                headers={"X-Existing-Job-Id": str(active.id)},
+            )
+        job = AnalysisJob(media_asset_id=media.id, kind="fixed_camera_video")
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        payload = _job_payload(job)
     submit_video_job(job.id)
     return {**payload, "poll_url": f"/api/v1/video/jobs/{job.id}"}
 

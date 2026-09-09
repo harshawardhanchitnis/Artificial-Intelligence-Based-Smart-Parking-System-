@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 from app.ml.features import scenario_features
-from app.ml.geometry import rectify_slot
+from app.ml.geometry import rectify_slots
 from app.ml.model_store import load_model
 from app.ml.occupancy_v3 import OccupancyV3NotReadyError, OccupancyV3Predictor
 from app.services.catalogue_service import CatalogueRepository
@@ -25,7 +25,7 @@ def analyse_scenario(data_root: Path, model_root: Path, scenario_id: str) -> dic
         try:
             enhanced = OccupancyV3Predictor.load(model_root)
             occupied_probabilities, _ = enhanced.probabilities(
-                [rectify_slot(rgb, slot["polygon"]) for slot in slots]
+                rectify_slots(rgb, [slot["polygon"] for slot in slots])
             )
             threshold = enhanced.threshold
             model_name = str(enhanced.metadata["model_name"])
@@ -64,8 +64,30 @@ def analyse_scenario(data_root: Path, model_root: Path, scenario_id: str) -> dic
         )
     occupied = int(np.sum(predicted_states))
     total = len(predictions)
+    truth_occupied = sum(1 for row in predictions if row["ground_truth_occupied"])
+    disagreeing = total - agreements
+
+    # An agreement figure that cannot be reconciled with the counts beside it is
+    # how a dashboard ends up quietly lying: "100 vacant, 0 occupied, 100%
+    # agreement" is only true if the labels also say nothing is parked here.
+    # Each disagreeing bay can move the predicted occupied count by at most one,
+    # so this bound must hold for any honest pair of numbers -- and at 100%
+    # agreement it forces the two counts to be equal.
+    if abs(occupied - truth_occupied) > disagreeing:
+        raise ValueError(
+            "ground-truth agreement contradicts the occupancy counts: "
+            f"predicted {occupied} occupied against {truth_occupied} labelled, "
+            f"with only {disagreeing} disagreeing of {total} bays"
+        )
     elapsed_ms = (perf_counter() - started) * 1_000
     return {
+        # Benchmark mode: exactly the bays this dataset defines, scored by the
+        # occupancy classifier alone.  Nothing the space detector finds is added
+        # and no vehicle evidence is fused, because every historical figure was
+        # produced this way and a comparison is only a comparison if the method
+        # did not move underneath it.  ``ground_truth_agreement`` below is
+        # therefore a statement about these bays and no others.
+        "analysis_mode": "benchmark",
         "scenario_id": scenario_id,
         "dataset": scenario["dataset"],
         "lot": scenario["lot"],
@@ -78,6 +100,12 @@ def analyse_scenario(data_root: Path, model_root: Path, scenario_id: str) -> dic
         "occupied_spaces": occupied,
         "vacant_spaces": total - occupied,
         "ground_truth_agreement": round(agreements / total, 6),
+        # Published so the agreement figure can be checked against the labels
+        # rather than trusted. Without these the UI shows a percentage nobody
+        # can audit from the screen.
+        "ground_truth_occupied_spaces": truth_occupied,
+        "ground_truth_vacant_spaces": total - truth_occupied,
+        "disagreeing_spaces": disagreeing,
         "average_confidence": round(
             float(np.mean([prediction["confidence"] for prediction in predictions])), 6
         ),

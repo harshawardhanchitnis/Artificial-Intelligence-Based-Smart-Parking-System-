@@ -30,6 +30,27 @@ class Settings(BaseSettings):
     max_video_height: int = 1080
     video_sample_fps: float = 2.0
     media_retention_days: int = 30
+    ffmpeg_path: str = ""
+    onnx_provider: str = "cpu"
+
+    # Full-scene vehicle understanding.  Independent of bay detection, so a
+    # visible vehicle is still reported when its bay was never proposed.
+    enable_vehicle_detection: bool = True
+
+    # Snapping bay corners onto painted markings.  Off by default: measured on
+    # the development split it moved geometry away from the truth rather than
+    # toward it, because the dominant dataset annotates bays around where
+    # vehicles stand rather than on the paint.  See app.ml.line_refinement.
+    enable_marking_refinement: bool = False
+
+    # Frames the automatic camera calibration gathers before it will trust a
+    # layout, and the share of them a bay must appear in to be kept.
+    calibration_frames: int = 7
+    calibration_consensus: float = 0.6
+
+    # Where this instance runs.  Drives the privacy wording the interface uses,
+    # so a cloud deployment cannot inherit a local-only claim.
+    deployment_mode: str = "local"
 
     @property
     def cors_origin_list(self) -> list[str]:

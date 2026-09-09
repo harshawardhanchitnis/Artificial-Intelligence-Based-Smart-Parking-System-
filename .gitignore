@@ -49,3 +49,10 @@ ml/runs/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Training run artifacts (ultralytics)
+runs/
+
+# Pretrained checkpoints downloaded by the training scripts
+weights/
+*.pt

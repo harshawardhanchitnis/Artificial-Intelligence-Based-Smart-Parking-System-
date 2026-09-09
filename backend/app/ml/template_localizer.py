@@ -1,3 +1,12 @@
+"""Recognise a registered fixed camera and reuse the layout it already has.
+
+Two mechanisms live here: an ONNX layout classifier that names the camera, and
+an ORB/RANSAC template registry that re-projects a stored layout onto a fresh
+frame.  Both run on every image request, so this module carries no training
+framework -- the classifier's architecture and its ONNX export are in
+``app.ml.template_localizer_training``.
+"""
+
 from __future__ import annotations
 
 import json
@@ -8,13 +17,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 import onnxruntime as ort
-import torch
 from PIL import Image
-from torch import nn
-from torchvision import models, transforms
 
 from app.datasets.integrity import atomic_json, deterministic_score, sha256_file
+from app.ml import registry
 from app.ml.geometry import order_polygon, validate_polygon
+from app.ml.preprocessing import imagenet_chw
+from app.ml.registry import inference_providers, session_options
 
 TEMPLATE_DIRECTORY = "parking-layout-templates"
 TEMPLATE_MANIFEST = "parking-layout-templates.json"
@@ -22,30 +31,6 @@ LAYOUT_CLASSIFIER_ONNX = "parking-layout-classifier-v1.onnx"
 LAYOUT_CLASSIFIER_METADATA = "parking-layout-classifier-v1.json"
 LAYOUT_INPUT_SIZE = 224
 WIDE_ASPECT_THRESHOLD = 1.55
-
-
-def layout_preprocessing(training: bool = False) -> transforms.Compose:
-    operations: list[object] = [transforms.Resize((LAYOUT_INPUT_SIZE, LAYOUT_INPUT_SIZE))]
-    if training:
-        operations.extend(
-            [
-                transforms.ColorJitter(brightness=0.35, contrast=0.35, saturation=0.2),
-                transforms.RandomAutocontrast(p=0.2),
-            ]
-        )
-    operations.extend(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        ]
-    )
-    return transforms.Compose(operations)  # type: ignore[arg-type]
-
-
-def build_layout_classifier(class_count: int, *, pretrained: bool = False) -> nn.Module:
-    model = models.mobilenet_v3_small(weights="DEFAULT" if pretrained else None)
-    model.classifier[3] = nn.Linear(model.classifier[3].in_features, class_count)
-    return model
 
 
 def layout_key(row: dict[str, object]) -> str:
@@ -281,51 +266,6 @@ def export_template_registry(
     }
 
 
-def export_layout_classifier(
-    model: nn.Module,
-    model_root: Path,
-    *,
-    labels: list[str],
-    canonical_slots: dict[str, list[dict[str, object]]],
-    confidence_threshold: float,
-) -> dict[str, object]:
-    destination = model_root / LAYOUT_CLASSIFIER_ONNX
-    temporary = destination.with_suffix(".onnx.tmp")
-    model.eval().cpu()
-    torch.onnx.export(
-        model,
-        torch.zeros(1, 3, LAYOUT_INPUT_SIZE, LAYOUT_INPUT_SIZE),
-        temporary,
-        input_names=["image"],
-        output_names=["layout_logits"],
-        dynamic_axes={"image": {0: "batch"}, "layout_logits": {0: "batch"}},
-        opset_version=18,
-        dynamo=False,
-    )
-    temporary.replace(destination)
-    metadata = {
-        "schema_version": "1.0",
-        "labels": labels,
-        "canonical_slots": canonical_slots,
-        "confidence_threshold": confidence_threshold,
-        "onnx_file": LAYOUT_CLASSIFIER_ONNX,
-        "onnx_sha256": sha256_file(destination),
-        "scope": "registered fixed-camera layouts; unfamiliar viewpoints are rejected",
-        "layout_family_constraint": {
-            "method": "source aspect-ratio family",
-            "wide_aspect_threshold": WIDE_ASPECT_THRESHOLD,
-            "wide_family": "PKLot",
-            "standard_family": "CNRPark+EXT",
-        },
-    }
-    atomic_json(model_root / LAYOUT_CLASSIFIER_METADATA, metadata)
-    return {
-        "layout_classifier_file": LAYOUT_CLASSIFIER_ONNX,
-        "layout_classifier_sha256": metadata["onnx_sha256"],
-        "layout_classifier_metadata": LAYOUT_CLASSIFIER_METADATA,
-    }
-
-
 @dataclass
 class LayoutClassifierPredictor:
     session: ort.InferenceSession
@@ -335,19 +275,34 @@ class LayoutClassifierPredictor:
 
     @classmethod
     def load(cls, model_root: Path) -> LayoutClassifierPredictor:
+        """Return the shared classifier, building it once per model file version."""
         metadata_path = model_root / LAYOUT_CLASSIFIER_METADATA
         if not metadata_path.is_file():
             raise RuntimeError("Fixed-camera layout classifier is not installed")
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata = registry.read_metadata(metadata_path)
         model_path = model_root / str(metadata["onnx_file"])
-        if not model_path.is_file() or sha256_file(model_path) != metadata["onnx_sha256"]:
-            raise RuntimeError("Fixed-camera layout classifier checksum is invalid")
-        return cls(
-            ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"]),
-            [str(value) for value in metadata["labels"]],
-            metadata["canonical_slots"],
-            float(metadata["confidence_threshold"]),
-        )
+        signature = registry.file_signature(model_path, metadata_path)
+
+        def build() -> LayoutClassifierPredictor:
+            digest = registry.cached(
+                f"sha256::{model_path}",
+                registry.file_signature(model_path),
+                lambda: sha256_file(model_path),
+            )
+            if not model_path.is_file() or digest != metadata["onnx_sha256"]:
+                raise RuntimeError("Fixed-camera layout classifier checksum is invalid")
+            return cls(
+                ort.InferenceSession(
+                    str(model_path),
+                    sess_options=session_options(),
+                    providers=inference_providers(),
+                ),
+                [str(value) for value in metadata["labels"]],
+                metadata["canonical_slots"],
+                float(metadata["confidence_threshold"]),
+            )
+
+        return registry.cached("layout_classifier", signature, build)
 
     def detect(self, image: Image.Image) -> dict[str, object]:
         rgb_image = image.convert("RGB")
@@ -366,7 +321,7 @@ class LayoutClassifierPredictor:
                     "Image lacks enough photographic contrast for reliable layout recognition"
                 ),
             }
-        inputs = layout_preprocessing()(rgb_image).unsqueeze(0).numpy()
+        inputs = imagenet_chw(rgb_image, LAYOUT_INPUT_SIZE)[None, :, :, :]
         logits = self.session.run(["layout_logits"], {"image": inputs})[0][0]
         logits = constrain_layout_logits(
             logits, self.labels, width=image.width, height=image.height

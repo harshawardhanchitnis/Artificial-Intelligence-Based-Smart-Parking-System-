@@ -83,6 +83,13 @@ async def store_image(upload: UploadFile, settings: Settings) -> StoredMedia:
         if canonical != path:
             path.unlink(missing_ok=True)
             path = canonical
+        # The file on disk is the re-encoded canonical JPEG, not the bytes that
+        # arrived, so its size is what the metadata endpoint should report.
+        # ``digest`` deliberately stays the digest of the *upload*: it is what
+        # deduplication compares, so the same picture submitted twice resolves
+        # to one asset. Recording the canonical size beside an upload digest
+        # keeps both facts true instead of implying the stored bytes hash to it.
+        size = path.stat().st_size
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         path.unlink(missing_ok=True)
         raise MediaValidationError("The upload is not a valid supported image") from exc

@@ -53,6 +53,8 @@ def application_run_diagnostics(records: Iterable[AnalysisRecord]) -> dict[str, 
     unique_scenarios: set[tuple[str, str]] = set()
     unique_slots: set[tuple[str, str, str]] = set()
 
+    unlabelled_predictions = 0
+    unlabelled_runs = 0
     for record in rows:
         try:
             predictions = json.loads(record.prediction_json) if record.prediction_json else []
@@ -60,6 +62,19 @@ def application_run_diagnostics(records: Iterable[AnalysisRecord]) -> dict[str, 
             predictions = []
         if not isinstance(predictions, list) or not predictions:
             continue
+        # Uploaded images carry no ground truth.  Scoring them would silently
+        # treat every unlabelled slot as vacant, so they are counted and skipped.
+        labelled = [
+            prediction
+            for prediction in predictions
+            if isinstance(prediction, dict) and "ground_truth_occupied" in prediction
+        ]
+        if not labelled:
+            unlabelled_runs += 1
+            unlabelled_predictions += len(predictions)
+            continue
+        unlabelled_predictions += len(predictions) - len(labelled)
+        predictions = labelled
         eligible_runs += 1
         unique_scenarios.add((record.dataset, record.scenario_id))
         for prediction in predictions:
@@ -96,6 +111,8 @@ def application_run_diagnostics(records: Iterable[AnalysisRecord]) -> dict[str, 
     repeated = int(metrics["evaluated_slots"]) - len(unique_slots)
     return {
         "semantic_label": "Stored-run agreement",
+        "unlabelled_predictions_excluded": unlabelled_predictions,
+        "unlabelled_runs_excluded": unlabelled_runs,
         "total_runs": len(rows),
         "prediction_enabled_runs": eligible_runs,
         "legacy_runs": len(rows) - eligible_runs,

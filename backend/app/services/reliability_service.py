@@ -6,8 +6,26 @@ from pathlib import Path
 from sqlalchemy import Engine, text
 
 from app.ml.model_store import model_status
+from app.ml.occupancy_fusion import load_policy
+from app.ml.vehicle_detector import detector_status as vehicle_detector_status
 from app.services.catalogue_service import CatalogueRepository, ScenarioNotFoundError
 from app.services.demo_service import REQUIRED_DATASETS, select_showcase_scenarios
+from app.services.video_service import resolve_ffmpeg
+
+# Keeps readiness expectations in tests aligned with the checks actually run.
+READINESS_CHECK_COUNT = 13
+
+
+def describe_location(path: Path) -> str:
+    """Name a configured location without publishing where it is on disk.
+
+    Readiness is served unauthenticated, and an absolute path discloses the
+    account name and directory layout of the machine to anyone who can reach
+    the endpoint.  The operator already knows where they pointed the setting;
+    what readiness has to answer is whether it resolved, so it reports the leaf
+    name and leaves the rest out.
+    """
+    return f"...{Path(path).name}" if Path(path).name else "configured location"
 
 
 def _check(key: str, label: str, ready: bool, detail: str) -> dict[str, object]:
@@ -42,7 +60,7 @@ def collect_readiness(data_root: Path, model_root: Path, engine: Engine) -> dict
             "dataset_root",
             "External dataset root",
             root_ready,
-            str(data_root) if root_ready else "Folder not found",
+            describe_location(data_root) if root_ready else "Folder not found",
         )
     )
     checks.append(database_check(engine))
@@ -134,7 +152,54 @@ def collect_readiness(data_root: Path, model_root: Path, engine: Engine) -> dict
             "media_storage",
             "Media processing storage",
             media_ready,
-            str(media_root) if media_ready else "Storage is not writable",
+            describe_location(media_root) if media_ready else "Storage is not writable",
+        )
+    )
+    detector = model.get("space_detector", {})
+    checks.append(
+        _check(
+            "space_detector",
+            "Generalized parking-space detector",
+            bool(detector.get("ready")),
+            str(detector.get("model_name"))
+            if detector.get("ready")
+            else str(detector.get("reason", "Not installed")),
+        )
+    )
+    vehicles = vehicle_detector_status(model_root)
+    checks.append(
+        _check(
+            "vehicle_detector",
+            "Full-scene vehicle detector",
+            bool(vehicles.get("ready")),
+            # Vehicle evidence is optional by design: without it the system
+            # falls back to bay-only occupancy rather than failing, so the
+            # detail says what is lost rather than reporting a fault.
+            f"{vehicles.get('model_name')} at {vehicles.get('input_size')}px"
+            if vehicles.get("ready")
+            else str(vehicles.get("reason", "Not installed")),
+        )
+    )
+    fusion = load_policy(model_root)
+    checks.append(
+        _check(
+            "occupancy_fusion",
+            "Occupancy evidence fusion",
+            fusion.fitted,
+            "Fitted coefficients loaded"
+            if fusion.fitted
+            else "Not fitted; occupancy falls back to the classifier alone",
+        )
+    )
+    ffmpeg_binary = resolve_ffmpeg()
+    checks.append(
+        _check(
+            "video_encoder",
+            "Video encoder (FFmpeg)",
+            ffmpeg_binary is not None,
+            "Available"
+            if ffmpeg_binary is not None
+            else "FFmpeg was not found; set FFMPEG_PATH or install it to enable video playback",
         )
     )
     benchmark = model.get("independent_benchmark")
@@ -152,6 +217,7 @@ def collect_readiness(data_root: Path, model_root: Path, engine: Engine) -> dict
         )
     )
 
+    assert len(checks) == READINESS_CHECK_COUNT
     passed = sum(bool(check["ready"]) for check in checks)
     ready = passed == len(checks)
     return {

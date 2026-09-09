@@ -37,6 +37,13 @@ type Analysis = {
 };
 type ScenarioResponse = { count: number; scenarios: Scenario[] };
 
+// Several scenarios share the same lot and condition, so the label also carries
+// the distinguishing part of the scenario id (a capture date or frame name).
+function scenarioLabel(row: { id: string; lot: string; condition: string }): string {
+  const detail = row.id.split("-").slice(-3).join("-");
+  return `${row.lot} · ${row.condition} · ${detail}`;
+}
+
 export function ScenarioExplorer() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [dataset, setDataset] = useState("All datasets");
@@ -128,7 +135,7 @@ export function ScenarioExplorer() {
           <label className="block">
             <span className="mb-2 block text-xs font-bold text-slate-500">Scenario</span>
             <select className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm" value={selected.id} onChange={(event) => chooseScenario(event.target.value)}>
-              {visible.map((row) => <option key={row.id} value={row.id}>{row.lot} · {row.condition}</option>)}
+              {visible.map((row) => <option key={row.id} value={row.id}>{scenarioLabel(row)}</option>)}
             </select>
           </label>
         </div>

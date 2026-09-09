@@ -26,9 +26,8 @@ from app.datasets.integrity import PROTOCOL_ID, atomic_json, read_jsonl, sha256_
 from app.datasets.v2_protocol import prepare_v2_protocol
 from app.ml.features import extract_features
 from app.ml.model_store import ModelNotReadyError, load_model
-from app.ml.occupancy_v3 import (
-    OCCUPANCY_METADATA,
-    OccupancyV3Predictor,
+from app.ml.occupancy_v3 import OCCUPANCY_METADATA, OccupancyV3Predictor
+from app.ml.occupancy_v3_training import (
     build_occupancy_model,
     export_occupancy_model,
     preprocessing,

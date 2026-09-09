@@ -9,6 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
+from app.ml import registry
 from app.ml.features import FEATURE_VERSION
 
 MODEL_SCHEMA_VERSION = "2.0"
@@ -93,6 +94,22 @@ def save_model(
 
 
 def load_model(model_root: Path) -> ModelArtifact:
+    """Return the shared baseline artifact, parsed once per file version."""
+    weights_path, metadata_path = model_paths(model_root)
+    signature = registry.file_signature(weights_path, metadata_path)
+    cached_error = registry.cached_failure("baseline_model", signature)
+    if cached_error is not None:
+        raise cached_error
+    try:
+        return registry.cached(
+            "baseline_model", signature, lambda: _load_model_uncached(model_root)
+        )
+    except ModelNotReadyError as exc:
+        registry.remember_failure("baseline_model", signature, exc)
+        raise
+
+
+def _load_model_uncached(model_root: Path) -> ModelArtifact:
     weights_path, metadata_path = model_paths(model_root)
     if not weights_path.is_file() or not metadata_path.is_file():
         raise ModelNotReadyError("Local model is not trained; run scripts\\train-model.ps1")
@@ -112,7 +129,12 @@ def load_model(model_root: Path) -> ModelArtifact:
         "train-only; validation selects threshold; test remains unseen"
     ):
         raise ModelNotReadyError("Model fitting policy is not leakage-safe")
-    if metadata.get("weights_sha256") != _sha256(weights_path):
+    digest = registry.cached(
+        f"sha256::{weights_path}",
+        registry.file_signature(weights_path),
+        lambda: _sha256(weights_path),
+    )
+    if metadata.get("weights_sha256") != digest:
         raise ModelNotReadyError("Model weights checksum does not match metadata")
 
     try:
@@ -145,6 +167,7 @@ def load_model(model_root: Path) -> ModelArtifact:
 
 
 def model_status(model_root: Path) -> dict[str, object]:
+    from app.ml.generalized_localizer import detector_status
     from app.ml.localization import localizer_status
     from app.ml.occupancy_v3 import occupancy_v3_status
 
@@ -174,5 +197,6 @@ def model_status(model_root: Path) -> dict[str, object]:
         "baseline": baseline,
         "enhanced_occupancy": enhanced,
         "slot_localizer": localizer,
+        "space_detector": detector_status(model_root),
         "independent_benchmark": baseline.get("independent_benchmark"),
     }

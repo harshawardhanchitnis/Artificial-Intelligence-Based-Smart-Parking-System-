@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db.models import AnalysisRecord
+from app.db.models import AnalysisRecord, MediaAsset
 from app.db.session import SessionLocal
 from app.ml.inference import analyse_scenario
-from app.ml.localization import localizer_status
 from app.ml.model_store import ModelNotReadyError, model_status
-from app.ml.occupancy_v3 import occupancy_v3_status
 from app.services.analytics_service import record_payload
 from app.services.catalogue_service import ScenarioNotFoundError
 
@@ -20,17 +20,23 @@ router = APIRouter()
 
 @router.get("/model/status")
 def status() -> dict[str, object]:
+    """Report model readiness.
+
+    ``model_status`` already gathers the enhanced-occupancy and localizer
+    reports, so they are read from that bundle rather than recomputed.
+    """
     settings = get_settings()
     model_bundle = model_status(settings.model_root)
     baseline = model_bundle["baseline"]
-    enhanced = occupancy_v3_status(settings.model_root)
+    enhanced = model_bundle["enhanced_occupancy"]
     active = enhanced if enhanced["ready"] else baseline
     return {
         **active,
         "ready": bool(enhanced["ready"] or baseline["ready"]),
-        "active_model": enhanced if enhanced["ready"] else baseline,
+        "active_model": active,
         "enhanced_occupancy": enhanced,
-        "automatic_localizer": localizer_status(settings.model_root),
+        "automatic_localizer": model_bundle["slot_localizer"],
+        "space_detector": model_bundle["space_detector"],
         "reproducible_baseline": baseline,
     }
 
@@ -73,8 +79,18 @@ def history(limit: int = Query(default=25, ge=1, le=200)) -> dict[str, object]:
         records = session.scalars(
             select(AnalysisRecord).order_by(AnalysisRecord.created_at.desc()).limit(limit)
         ).all()
-    rows = [record_payload(record) for record in records]
+        media_names = _media_names(session, records)
+    rows = [record_payload(record, media_names=media_names) for record in records]
     return {"count": len(rows), "analyses": rows}
+
+
+def _media_names(session: Session, records: Sequence[AnalysisRecord]) -> dict[int, str]:
+    """Original upload filenames for the given records, in one query."""
+    ids = {record.media_asset_id for record in records if record.media_asset_id}
+    if not ids:
+        return {}
+    assets = session.scalars(select(MediaAsset).where(MediaAsset.id.in_(ids))).all()
+    return {asset.id: asset.original_name for asset in assets if asset.original_name}
 
 
 @router.get("/analysis/history/{analysis_id}")
@@ -83,5 +99,9 @@ def history_detail(analysis_id: int) -> dict[str, object]:
         record = session.get(AnalysisRecord, analysis_id)
         if record is None:
             raise HTTPException(status_code=404, detail="Analysis record not found")
-        payload = record_payload(record, include_predictions=True)
+        payload = record_payload(
+            record,
+            include_predictions=True,
+            media_names=_media_names(session, [record]),
+        )
     return payload

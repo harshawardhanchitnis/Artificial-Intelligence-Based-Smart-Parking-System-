@@ -6,7 +6,7 @@ import { Button, StatusBadge } from "@/components/ui";
 import { apiErrorMessage, apiFetch, apiUrl } from "@/lib/api-client";
 
 type Job = { id: number; status: string; phase: string; progress: number; result_analysis_id: number | null; error: { message: string } | null };
-type TimelinePoint = { timestamp_seconds: number; status: "observed" | "uncertain_camera_motion"; occupied_spaces: number | null; vacant_spaces: number | null; average_confidence: number | null };
+type TimelinePoint = { timestamp_seconds: number; status: "observed" | "uncertain_camera_motion"; occupied_spaces: number | null; vacant_spaces: number | null; uncertain_spaces?: number | null; average_confidence: number | null };
 type Result = { analysis_id: number; processed_frames: number; dropped_frames: number; stability_confidence: number; processing_time_ms: number | null; analysed_frames_per_second: number | null; timeline: TimelinePoint[]; events: unknown[]; playback_url: string };
 type PreparedVideo = { id: string; dataset: string; group_id: string; frame_count: number; duration_seconds: number; continuity: string };
 
@@ -18,6 +18,9 @@ export function VideoAnalysis() {
   const [prepared, setPrepared] = useState<PreparedVideo[]>([]);
   const [playbackTime, setPlaybackTime] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
+  // Set before the request leaves, so a double click cannot queue a second job
+  // while the first submission is still in flight.
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     apiFetch<{ videos: PreparedVideo[] }>("/datasets/videos")
@@ -40,11 +43,13 @@ export function VideoAnalysis() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!file) return;
+    if (!file || submitting || active) return;
+    setSubmitting(true);
     setError(""); setResult(null);
     const data = new FormData(); data.append("file", file);
     try { setJob(await apiFetch<Job>("/video/analyse", { method: "POST", body: data, timeoutMs: 120_000 })); }
     catch (reason) { setError(apiErrorMessage(reason)); }
+    finally { setSubmitting(false); }
   }
 
   async function cancel() {
@@ -54,12 +59,16 @@ export function VideoAnalysis() {
   }
 
   async function analysePrepared(videoId: string) {
+    if (submitting || active) return;
+    setSubmitting(true);
     setError(""); setResult(null);
     try { setJob(await apiFetch<Job>(`/video/prepared/${encodeURIComponent(videoId)}/analyse`, { method: "POST" })); }
     catch (reason) { setError(apiErrorMessage(reason)); }
+    finally { setSubmitting(false); }
   }
 
-  const active = job && ["queued", "running"].includes(job.status);
+  const active = Boolean(job && ["queued", "running"].includes(job.status));
+  const busy = active || submitting;
   const observedTimeline = result?.timeline.filter((point) => point.status === "observed" && point.occupied_spaces !== null && point.vacant_spaces !== null) ?? [];
   const currentTimelineIndex =
     observedTimeline.length > 0 && playbackDuration > 0
@@ -84,12 +93,12 @@ export function VideoAnalysis() {
         <p className="label">Fixed-camera workflow</p><h2 className="mt-2 text-xl font-black">Upload prerecorded video</h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">The initial layout is detected once and reused only while camera-stability checks pass.</p>
         <label className="mt-6 block"><span className="mb-2 block text-sm font-bold">Video file</span><input required type="file" accept="video/mp4,video/x-msvideo,.mp4,.avi" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="block min-h-11 w-full rounded-xl border border-slate-300 bg-white p-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:font-bold file:text-white" /></label>
-        <Button className="mt-5 w-full" disabled={!file || Boolean(active)}>Start fixed-camera analysis</Button>
+        <Button className="mt-5 w-full" disabled={!file || busy}>{submitting ? "Submitting…" : "Start fixed-camera analysis"}</Button>
         <p className="mt-3 text-xs leading-5 text-slate-600">MP4 or AVI · up to 500 MB · 5 minutes · 1920×1080</p>
         {active && <Button type="button" variant="danger" className="mt-3 w-full" onClick={cancel}>Cancel processing</Button>}
         {job && <div className="mt-5" aria-live="polite"><div className="flex justify-between text-sm font-bold"><span>{job.phase.replaceAll("_", " ")}</span><span>{Math.round(job.progress * 100)}%</span></div><div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-amber-400 transition-all" style={{ width: `${job.progress * 100}%` }} /></div></div>}
         {error && <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</div>}
-        {prepared.length > 0 && <div className="mt-6 border-t border-slate-200 pt-5"><p className="text-sm font-extrabold">Prepared time-lapse evidence</p><p className="mt-1 text-xs leading-5 text-slate-600">Same fixed camera and day, temporally ordered; these are not native continuous recordings.</p><div className="mt-3 space-y-2">{prepared.map((video) => <button type="button" disabled={Boolean(active)} onClick={() => analysePrepared(video.id)} key={video.id} className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-xs font-bold text-slate-800 hover:bg-slate-100 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 disabled:bg-slate-200 disabled:text-slate-600"><span className="block">{video.dataset} · {video.group_id}</span><span className="mt-1 block font-medium text-slate-600">{video.frame_count} frames · {video.duration_seconds.toFixed(1)}s time-lapse</span></button>)}</div></div>}
+        {prepared.length > 0 && <div className="mt-6 border-t border-slate-200 pt-5"><p className="text-sm font-extrabold">Prepared time-lapse evidence</p><p className="mt-1 text-xs leading-5 text-slate-600">Same fixed camera and day, temporally ordered; these are not native continuous recordings.</p><div className="mt-3 space-y-2">{prepared.map((video) => <button type="button" disabled={busy} onClick={() => analysePrepared(video.id)} key={video.id} className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-xs font-bold text-slate-800 hover:bg-slate-100 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 disabled:bg-slate-200 disabled:text-slate-600"><span className="block">{video.dataset} · {video.group_id}</span><span className="mt-1 block font-medium text-slate-600">{video.frame_count} frames · {video.duration_seconds.toFixed(1)}s time-lapse</span></button>)}</div></div>}
       </form>
       <section className="card min-h-96 overflow-hidden">
         {!result && <div className="grid min-h-96 place-items-center p-8 text-center text-slate-600"><div><p className="font-bold text-slate-900">Processed playback and occupancy timeline</p><p className="mt-2 text-sm">Moving-camera footage is intentionally not claimed or accepted.</p></div></div>}
@@ -112,7 +121,7 @@ export function VideoAnalysis() {
     setPlaybackDuration(event.currentTarget.duration || playbackDuration);
   }}
   className="aspect-video w-full bg-black"
->Your browser cannot play the processed video.</video>{currentPoint && <div className="grid grid-cols-3 divide-x divide-slate-200">{[["Time", `${currentPoint.timestamp_seconds.toFixed(1)}s`], ["Vacant", currentPoint.vacant_spaces], ["Occupied", currentPoint.occupied_spaces]].map(([label, value]) => <div key={label} className="p-5 text-center"><p className="text-2xl font-black">{value}</p><p className="mt-1 text-xs font-bold text-slate-600">{label}</p></div>)}</div>}<div className="border-t border-slate-200 p-5"><h3 className="font-bold">Occupancy timeline</h3><div className="mt-3 flex h-28 items-end gap-1 overflow-hidden" aria-label="Occupied spaces over time">{observedTimeline.map((point) => <div key={point.timestamp_seconds} title={`${point.timestamp_seconds}s: ${point.occupied_spaces} occupied`} className="min-w-1 flex-1 bg-amber-400" style={{ height: `${Math.max(5, (point.occupied_spaces ?? 0) / Math.max((point.occupied_spaces ?? 0) + (point.vacant_spaces ?? 0), 1) * 100)}%` }} />)}</div></div></>}
+>Your browser cannot play the processed video.</video>{currentPoint && <><div className="grid grid-cols-2 divide-x divide-slate-200 sm:grid-cols-4">{[["Source time", `${currentPoint.timestamp_seconds.toFixed(1)}s`, "position in the original recording"], ["Vacant", String(currentPoint.vacant_spaces), "at this frame"], ["Occupied", String(currentPoint.occupied_spaces), "at this frame"], ["Uncertain", String(currentPoint.uncertain_spaces ?? 0), "no verdict asserted"]].map(([label, value, note]) => <div key={label} className="p-5 text-center"><p className="text-2xl font-black">{value}</p><p className="mt-1 text-xs font-bold text-slate-600">{label}</p><p className="mt-1 text-[11px] leading-4 text-slate-500">{note}</p></div>)}</div>{result.dropped_frames > 0 && <p className="border-t border-slate-200 bg-amber-50 px-5 py-3 text-xs font-semibold text-amber-900">{result.dropped_frames} frame{result.dropped_frames === 1 ? " was" : "s were"} omitted from playback because the camera moved, so source time runs ahead of the player position.</p>}</>}<div className="border-t border-slate-200 p-5"><h3 className="font-bold">Occupancy timeline</h3><div className="mt-3 flex h-28 items-end gap-1 overflow-hidden" aria-label="Occupied spaces over time">{observedTimeline.map((point) => <div key={point.timestamp_seconds} title={`${point.timestamp_seconds}s: ${point.occupied_spaces} occupied`} className="min-w-1 flex-1 bg-amber-400" style={{ height: `${Math.max(5, (point.occupied_spaces ?? 0) / Math.max((point.occupied_spaces ?? 0) + (point.vacant_spaces ?? 0), 1) * 100)}%` }} />)}</div></div></>}
       </section>
     </div>
   );

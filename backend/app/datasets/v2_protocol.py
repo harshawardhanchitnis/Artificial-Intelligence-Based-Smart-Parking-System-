@@ -29,6 +29,7 @@ from app.datasets.integrity import (
     verify_partition_integrity,
     write_exposure_manifest,
 )
+from app.datasets.labels import parse_occupancy_attribute
 from app.datasets.preparation import (
     ACPDS_ARCHIVE_CANDIDATES,
     CNR_FULL_ARCHIVE,
@@ -154,9 +155,16 @@ def _save_source(
     }
 
 
-def _pklot_slots(xml_payload: bytes, width: int, height: int) -> list[dict[str, object]]:
+MAX_UNLABELLED_SLOT_RATE = 0.05
+
+
+def _pklot_slots(
+    xml_payload: bytes, width: int, height: int
+) -> tuple[list[dict[str, object]], int]:
+    """Return labelled slots and the number of spaces with no usable label."""
     root = ElementTree.fromstring(xml_payload)
-    slots = []
+    slots: list[dict[str, object]] = []
+    unlabelled = 0
     for space in root.findall("space"):
         contour = space.find("contour")
         if contour is None:
@@ -166,15 +174,20 @@ def _pklot_slots(xml_payload: bytes, width: int, height: int) -> list[dict[str, 
             for point in contour.findall("point")
         ]
         polygon = order_polygon(polygon)
-        if validate_polygon(polygon).valid:
-            slots.append(
-                {
-                    "id": str(space.attrib.get("id", len(slots) + 1)),
-                    "polygon": polygon,
-                    "occupied": space.attrib.get("occupied") == "1",
-                }
-            )
-    return slots
+        if not validate_polygon(polygon).valid:
+            continue
+        occupied = parse_occupancy_attribute(space.attrib.get("occupied"))
+        if occupied is None:
+            unlabelled += 1
+            continue
+        slots.append(
+            {
+                "id": str(space.attrib.get("id", len(slots) + 1)),
+                "polygon": polygon,
+                "occupied": occupied,
+            }
+        )
+    return slots, unlabelled
 
 
 def _prepare_pklot_sources(
@@ -182,7 +195,7 @@ def _prepare_pklot_sources(
     output_root: Path,
     limits: dict[str, int],
     progress: ProgressCallback | None,
-) -> list[dict[str, object]]:
+) -> tuple[list[dict[str, object]], dict[str, object]]:
     groups = _official_group_partitions(source_root, "PKLot")
     heaps = {partition: [] for partition in PARTITIONS}
     archive_path = source_root / PKLOT_ARCHIVE
@@ -223,6 +236,8 @@ def _prepare_pklot_sources(
                 records[source_id][suffix] = handle.read()
 
     sources = []
+    quarantined: list[dict[str, object]] = []
+    partial_label_count = 0
     site_localization = {"PUCPR": "train", "UFPR04": "validation", "UFPR05": "holdout"}
     for source_id, payloads in sorted(records.items()):
         if ".jpg" not in payloads or ".xml" not in payloads:
@@ -233,7 +248,25 @@ def _prepare_pklot_sources(
         image_payload = payloads[".jpg"]
         with Image.open(io.BytesIO(image_payload)) as image:
             width, height = image.size
-        slots = _pklot_slots(payloads[".xml"], width, height)
+        slots, unlabelled = _pklot_slots(payloads[".xml"], width, height)
+        total_spaces = len(slots) + unlabelled
+        if total_spaces and unlabelled / total_spaces > MAX_UNLABELLED_SLOT_RATE:
+            # The source annotation is too incomplete to trust.  Quarantine the
+            # whole image rather than training or scoring on partial labels.
+            quarantined.append(
+                {
+                    "dataset": "PKLot",
+                    "source_id": source_id,
+                    "group_id": f"{site}/{date}",
+                    "reason": "missing_occupancy_attribute",
+                    "labelled_spaces": len(slots),
+                    "unlabelled_spaces": unlabelled,
+                    "unlabelled_rate": round(unlabelled / total_spaces, 6),
+                }
+            )
+            continue
+        if unlabelled:
+            partial_label_count += unlabelled
         if not slots:
             continue
         destination = output_root / "sources" / "pklot" / f"{_slug(source_id)}.jpg"
@@ -250,7 +283,18 @@ def _prepare_pklot_sources(
                 localization_partition=site_localization.get(site.upper(), "train"),
             )
         )
-    return sources
+    _emit(
+        progress,
+        f"V2 PKLot: {len(sources):,} usable sources; "
+        f"{len(quarantined):,} quarantined for missing occupancy labels",
+    )
+    return sources, {
+        "quarantined_sources": quarantined,
+        "quarantined_source_count": len(quarantined),
+        "quarantined_groups": sorted({str(row["group_id"]) for row in quarantined}),
+        "partially_unlabelled_spaces_dropped": partial_label_count,
+        "max_unlabelled_slot_rate": MAX_UNLABELLED_SLOT_RATE,
+    }
 
 
 def _cnr_datetime(value: str) -> str:
@@ -514,9 +558,10 @@ def prepare_v2_protocol(
     crop_limits = SMOKE_CROP_LIMITS if profile == "smoke" else STANDARD_CROP_LIMITS
     exposure = write_exposure_manifest(source_root, artifact_root)
     sources = []
-    sources.extend(
-        _prepare_pklot_sources(source_root, output_root, source_limits["PKLot"], progress)
+    pklot_sources, label_quality = _prepare_pklot_sources(
+        source_root, output_root, source_limits["PKLot"], progress
     )
+    sources.extend(pklot_sources)
     sources.extend(
         _prepare_cnr_sources(source_root, output_root, source_limits["CNRPark+EXT"], progress)
     )
@@ -592,10 +637,12 @@ def prepare_v2_protocol(
         "occupancy_manifest_sha256": sha256_file(manifest),
         "quarantine_manifest_sha256": sha256_file(quarantine_manifest),
         "integrity": integrity,
+        "label_quality": label_quality,
         "historical_exposure_manifest_sha256": exposure["manifest_sha256"],
         "final_holdout_policy": (
             "single use after architecture, weights, threshold and calibration freeze"
         ),
     }
     atomic_json(output_root / "protocol-report.json", report)
+    atomic_json(output_root / "label-quality-report.json", label_quality)
     return report

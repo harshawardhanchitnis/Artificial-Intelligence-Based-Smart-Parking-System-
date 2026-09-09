@@ -22,6 +22,20 @@ export type ApiFetchOptions = RequestInit & {
   acceptedStatuses?: number[];
 };
 
+/**
+ * Declare a string body as JSON, and never touch anything else.
+ *
+ * `fetch` labels a string body `text/plain;charset=UTF-8` unless told otherwise,
+ * and FastAPI then hands the raw string to Pydantic instead of parsing it --
+ * which surfaced as a bare "Request validation failed" on the layout-correction
+ * save, with `model_attributes_type` as the only clue. FormData must keep its
+ * generated multipart boundary, so it is deliberately left alone; so is any
+ * caller that sets the header itself.
+ */
+function jsonContentType(body: BodyInit | null | undefined): Record<string, string> {
+  return typeof body === "string" ? { "Content-Type": "application/json" } : {};
+}
+
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { timeoutMs = 12_000, acceptedStatuses = [], headers, ...requestOptions } = options;
   const controller = new AbortController();
@@ -30,7 +44,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     const response = await fetch(apiUrl(path), {
       ...requestOptions,
       cache: requestOptions.cache ?? "no-store",
-      headers: { Accept: "application/json", ...headers },
+      headers: { Accept: "application/json", ...jsonContentType(requestOptions.body), ...headers },
       signal: controller.signal,
     });
     const requestId = response.headers.get("x-request-id");

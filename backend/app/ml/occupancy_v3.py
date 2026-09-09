@@ -1,3 +1,17 @@
+"""Serve the enhanced occupancy classifier from its exported ONNX artifact.
+
+This module is on the request path, so it holds only what answering a request
+needs: metadata validation, checksum verification, a cached inference session
+and the decision rules around its output.  The PyTorch model definitions and
+the ONNX export that produced the artifact live in
+``app.ml.occupancy_v3_training``, which the FastAPI application never imports.
+
+The separation is a performance boundary, not tidiness.  Torch and ONNX Runtime
+each size a thread pool to the machine and then compete for it, and the module
+that merely *defines* a torch model is enough to pull that competition into the
+serving process.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -10,10 +24,11 @@ from time import perf_counter
 
 import numpy as np
 import onnxruntime as ort
-import torch
 from PIL import Image
-from torch import nn
-from torchvision import models, transforms
+
+from app.ml import registry
+from app.ml.preprocessing import imagenet_batch
+from app.ml.registry import inference_providers, session_options
 
 OCCUPANCY_MODEL_NAME = "parking-occupancy-enhanced-v3"
 OCCUPANCY_SCHEMA_VERSION = "3.0"
@@ -24,71 +39,6 @@ IMAGE_SIZE = 128
 
 class OccupancyV3NotReadyError(RuntimeError):
     """Raised when the independently evaluated V3 model is unavailable."""
-
-
-class CompactOccupancyCNN(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(3, 24, 3, padding=1),
-            nn.BatchNorm2d(24),
-            nn.SiLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(24, 48, 3, padding=1),
-            nn.BatchNorm2d(48),
-            nn.SiLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(48, 96, 3, padding=1),
-            nn.BatchNorm2d(96),
-            nn.SiLU(),
-            nn.AdaptiveAvgPool2d(1),
-        )
-        self.classifier = nn.Sequential(nn.Flatten(), nn.Dropout(0.2), nn.Linear(96, 1))
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.classifier(self.features(inputs)).squeeze(1)
-
-
-class BinaryOutputWrapper(nn.Module):
-    def __init__(self, model: nn.Module) -> None:
-        super().__init__()
-        self.model = model
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.model(inputs).squeeze(1)
-
-
-def build_occupancy_model(architecture: str, *, pretrained: bool = False) -> nn.Module:
-    weights = "DEFAULT" if pretrained else None
-    if architecture == "compact-cnn":
-        return CompactOccupancyCNN()
-    if architecture == "mobilenet-v3-small":
-        model = models.mobilenet_v3_small(weights=weights)
-        model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, 1)
-        return BinaryOutputWrapper(model)
-    if architecture == "efficientnet-b0":
-        model = models.efficientnet_b0(weights=weights)
-        model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, 1)
-        return BinaryOutputWrapper(model)
-    raise ValueError(f"Unsupported occupancy architecture: {architecture}")
-
-
-def preprocessing(training: bool = False) -> transforms.Compose:
-    operations: list[object] = [transforms.Resize((IMAGE_SIZE, IMAGE_SIZE))]
-    if training:
-        operations.extend(
-            [
-                transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.2),
-                transforms.RandomAffine(4, translate=(0.03, 0.03), scale=(0.95, 1.05)),
-            ]
-        )
-    operations.extend(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        ]
-    )
-    return transforms.Compose(operations)  # type: ignore[arg-type]
 
 
 def sha256_file(path: Path) -> str:
@@ -110,45 +60,40 @@ def atomic_json(path: Path, payload: object) -> None:
     os.replace(temporary, path)
 
 
-def export_occupancy_model(
-    model: nn.Module,
-    model_root: Path,
-    *,
-    architecture: str,
-    threshold: float,
-    temperature: float,
-    metadata: dict[str, object],
-) -> dict[str, object]:
-    model_root.mkdir(parents=True, exist_ok=True)
-    model.eval().cpu()
-    destination = model_root / OCCUPANCY_ONNX
-    temporary = destination.with_suffix(".onnx.tmp")
-    torch.onnx.export(
-        model,
-        torch.zeros(1, 3, IMAGE_SIZE, IMAGE_SIZE),
-        temporary,
-        input_names=["image"],
-        output_names=["logit"],
-        dynamic_axes={"image": {0: "batch"}, "logit": {0: "batch"}},
-        opset_version=18,
-        dynamo=False,
-    )
-    os.replace(temporary, destination)
-    payload = {
-        **metadata,
-        "schema_version": OCCUPANCY_SCHEMA_VERSION,
-        "model_name": OCCUPANCY_MODEL_NAME,
-        "architecture": architecture,
-        "input_size": IMAGE_SIZE,
-        "preprocessing": "perspective-mask-v2-128 + ImageNet normalization",
-        "decision_threshold": round(float(threshold), 8),
-        "temperature": round(float(temperature), 8),
-        "onnx_file": OCCUPANCY_ONNX,
-        "onnx_sha256": sha256_file(destination),
-        "frozen": True,
-    }
-    atomic_json(model_root / OCCUPANCY_METADATA, payload)
-    return payload
+def occupancy_v3_metadata(model_root: Path) -> dict[str, object]:
+    """Validate and return enhanced-model metadata without building a session."""
+    model_path = model_root / OCCUPANCY_ONNX
+    metadata_path = model_root / OCCUPANCY_METADATA
+    if not model_path.is_file() or not metadata_path.is_file():
+        raise OccupancyV3NotReadyError(
+            "Enhanced occupancy model is not installed; "
+            "the reproducible V2 baseline remains available"
+        )
+    try:
+        metadata = registry.read_metadata(metadata_path)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise OccupancyV3NotReadyError("Enhanced model metadata is unreadable") from exc
+    if metadata.get("schema_version") != OCCUPANCY_SCHEMA_VERSION:
+        raise OccupancyV3NotReadyError("Enhanced model schema is unsupported")
+    if not metadata.get("frozen") or "final_holdout" not in metadata:
+        raise OccupancyV3NotReadyError("Enhanced model has not passed the frozen holdout gate")
+    return metadata
+
+
+def verify_checksum(path: Path, expected: str) -> None:
+    """Checksum a model file once per on-disk version.
+
+    Integrity is still enforced -- a file whose bytes change gets a new
+    signature and is hashed again -- but an unchanged file is not re-read on
+    every request.
+    """
+
+    def build() -> str:
+        return sha256_file(path)
+
+    digest = registry.cached(f"sha256::{path}", registry.file_signature(path), build)
+    if digest != expected:
+        raise OccupancyV3NotReadyError("Enhanced model checksum is invalid")
 
 
 @dataclass
@@ -160,69 +105,105 @@ class OccupancyV3Predictor:
 
     @classmethod
     def load(cls, model_root: Path) -> OccupancyV3Predictor:
+        """Return the shared predictor, building it once per model file version."""
         model_path = model_root / OCCUPANCY_ONNX
         metadata_path = model_root / OCCUPANCY_METADATA
-        if not model_path.is_file() or not metadata_path.is_file():
-            raise OccupancyV3NotReadyError(
-                "Enhanced occupancy model is not installed; "
-                "the reproducible V2 baseline remains available"
+        signature = registry.file_signature(model_path, metadata_path)
+        cached_error = registry.cached_failure("occupancy_v3", signature)
+        if cached_error is not None:
+            raise cached_error
+
+        def build() -> OccupancyV3Predictor:
+            metadata = occupancy_v3_metadata(model_root)
+            verify_checksum(model_path, str(metadata.get("onnx_sha256", "")))
+            return cls(
+                session=ort.InferenceSession(
+                    str(model_path),
+                    sess_options=session_options(),
+                    providers=inference_providers(),
+                ),
+                threshold=float(metadata["decision_threshold"]),
+                temperature=max(float(metadata.get("temperature", 1.0)), 1e-3),
+                metadata=metadata,
             )
+
         try:
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise OccupancyV3NotReadyError("Enhanced model metadata is unreadable") from exc
-        if metadata.get("schema_version") != OCCUPANCY_SCHEMA_VERSION:
-            raise OccupancyV3NotReadyError("Enhanced model schema is unsupported")
-        if metadata.get("onnx_sha256") != sha256_file(model_path):
-            raise OccupancyV3NotReadyError("Enhanced model checksum is invalid")
-        if not metadata.get("frozen") or "final_holdout" not in metadata:
-            raise OccupancyV3NotReadyError("Enhanced model has not passed the frozen holdout gate")
-        providers = ["CPUExecutionProvider"]
-        return cls(
-            session=ort.InferenceSession(str(model_path), providers=providers),
-            threshold=float(metadata["decision_threshold"]),
-            temperature=max(float(metadata.get("temperature", 1.0)), 1e-3),
-            metadata=metadata,
-        )
+            return registry.cached("occupancy_v3", signature, build)
+        except OccupancyV3NotReadyError as exc:
+            registry.remember_failure("occupancy_v3", signature, exc)
+            raise
 
     def probabilities(self, images: list[Image.Image]) -> tuple[np.ndarray, float]:
         if not images:
             return np.empty(0, dtype=np.float32), 0.0
-        transform = preprocessing(False)
-        batch = np.stack([transform(image.convert("RGB")).numpy() for image in images])
+        batch = imagenet_batch(images, IMAGE_SIZE)
         started = perf_counter()
-        logits = self.session.run(["logit"], {"image": batch.astype(np.float32)})[0]
+        logits = self.session.run(["logit"], {"image": batch})[0]
         elapsed = (perf_counter() - started) * 1_000
         logits = np.asarray(logits, dtype=np.float64).reshape(-1) / self.temperature
         probabilities = 1.0 / (1.0 + np.exp(-np.clip(logits, -40, 40)))
         return probabilities.astype(np.float32), elapsed
 
+    @property
+    def uncertain_band(self) -> tuple[float, float] | None:
+        """Probability range in which no vacant/occupied verdict is asserted.
+
+        Selected on the validation split; absent means the model reports a
+        plain binary decision.
+        """
+        band = self.metadata.get("uncertain_band")
+        if not isinstance(band, dict):
+            return None
+        try:
+            lower, upper = float(band["lower"]), float(band["upper"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        return (lower, upper) if 0.0 < lower < upper < 1.0 else None
+
+    def state_for(self, probability: float) -> str:
+        """Three-state verdict for one calibrated probability."""
+        band = self.uncertain_band
+        if band is not None and band[0] <= probability <= band[1]:
+            return "uncertain"
+        return "occupied" if probability >= self.threshold else "vacant"
+
     def predict(self, images: list[Image.Image]) -> tuple[list[dict[str, object]], float]:
         probabilities, elapsed = self.probabilities(images)
         results = []
         for probability in probabilities:
-            occupied = bool(float(probability) >= self.threshold)
+            value = float(probability)
+            state = self.state_for(value)
             results.append(
                 {
-                    "predicted_occupied": occupied,
-                    "occupied_probability": round(float(probability), 6),
-                    "confidence": round(float(max(probability, 1.0 - probability)), 6),
+                    # Kept for every existing consumer: "uncertain" spaces are
+                    # not counted as occupied.
+                    "predicted_occupied": state == "occupied",
+                    "occupancy_state": state,
+                    "occupied_probability": round(value, 6),
+                    "confidence": round(float(max(value, 1.0 - value)), 6),
                 }
             )
         return results, elapsed
 
 
 def occupancy_v3_status(model_root: Path) -> dict[str, object]:
+    """Report enhanced-model readiness from metadata alone.
+
+    This runs on every readiness and status request, so it must not construct
+    an inference session; the checksum is verified through the cache.
+    """
     try:
-        predictor = OccupancyV3Predictor.load(model_root)
+        metadata = occupancy_v3_metadata(model_root)
+        verify_checksum(model_root / OCCUPANCY_ONNX, str(metadata.get("onnx_sha256", "")))
     except OccupancyV3NotReadyError as exc:
         return {"ready": False, "model_name": OCCUPANCY_MODEL_NAME, "reason": str(exc)}
     return {
         "ready": True,
         "model_name": OCCUPANCY_MODEL_NAME,
-        "architecture": predictor.metadata.get("architecture"),
-        "decision_threshold": predictor.threshold,
-        "onnx_sha256": predictor.metadata.get("onnx_sha256"),
-        "final_holdout": predictor.metadata.get("final_holdout"),
-        "calibration": predictor.metadata.get("calibration"),
+        "architecture": metadata.get("architecture"),
+        "decision_threshold": float(metadata["decision_threshold"]),
+        "onnx_sha256": metadata.get("onnx_sha256"),
+        "final_holdout": metadata.get("final_holdout"),
+        "calibration": metadata.get("calibration"),
+        "uncertain_band": metadata.get("uncertain_band"),
     }
