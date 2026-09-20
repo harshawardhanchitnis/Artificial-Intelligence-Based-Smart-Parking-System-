@@ -75,6 +75,14 @@ def test_collect_readiness_requires_every_local_dependency(tmp_path, monkeypatch
         "load_policy",
         lambda _root: SimpleNamespace(fitted=True),
     )
+    # Readiness is a unit-level aggregate. Make the external FFmpeg dependency
+    # deterministic so this test verifies the readiness logic rather than the
+    # software installed on the machine running pytest.
+    monkeypatch.setattr(
+        reliability_service,
+        "resolve_ffmpeg",
+        lambda: "ffmpeg",
+    )
 
     report = collect_readiness(tmp_path, tmp_path / "models", create_engine("sqlite://"))
 

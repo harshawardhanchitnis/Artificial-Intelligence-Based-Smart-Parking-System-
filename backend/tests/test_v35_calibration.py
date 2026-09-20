@@ -24,6 +24,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
 from app.db.models import Base, VerifiedLayout
+from app.services import auto_calibration
 from app.services.auto_calibration import (
     ACTIVE,
     UNRESOLVED,
@@ -109,8 +110,21 @@ def test_calibrating_twice_does_not_duplicate_the_camera(session) -> None:
     assert session.query(VerifiedLayout).count() == 1
 
 
-def test_blank_frames_produce_an_unresolved_layout_not_an_invented_one() -> None:
+def test_blank_frames_produce_an_unresolved_layout_not_an_invented_one(monkeypatch) -> None:
     """Abstention is the required outcome when nothing recurs."""
+
+    class EmptyDetector:
+        def detect(self, _frame):
+            return []
+
+    # Exercise the blank-scene consensus path independently of whether the
+    # large detector artifact happens to be installed on the test runner.
+    monkeypatch.setattr(
+        auto_calibration.GeneralizedDetector,
+        "load",
+        classmethod(lambda _cls, _root: EmptyDetector()),
+    )
+
     settings = get_settings()
     blank = [Image.new("RGB", (640, 480), (90, 90, 90)) for _ in range(6)]
     result = calibrate_from_frames(blank, settings)
